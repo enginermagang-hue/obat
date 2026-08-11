@@ -1,0 +1,25 @@
+{
+    "name": "ennginie/boxicons",
+    "description": "Boxicons icon package for Filament with PHP Enum support",
+    "version": "1.0.0",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Stokobat\\Boxicons\\": "src/"
+        }
+    },
+    "require": {
+        "php": "^8.2",
+        "blade-ui-kit/blade-icons": "^1.8",
+        "filament/support": "^5.0",
+        "illuminate/support": "^11.0|^12.0|^13.0"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Stokobat\\Boxicons\\BoxiconsServiceProvider"
+            ]
+        }
+    }
+}

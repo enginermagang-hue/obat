@@ -1,0 +1,303 @@
+@import './app.css';
+
+@layer base {
+    html {
+        scroll-behavior: smooth;
+    }
+
+    body {
+        -webkit-font-smoothing: antialiased;
+    }
+}
+
+@layer components {
+    .panduan-sidebar {
+        @apply w-72 flex-shrink-0 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 h-dvh lg:h-[calc(100vh-4rem)] overflow-y-auto;
+    }
+
+    .panduan-toc {
+        @apply w-64 flex-shrink-0 hidden xl:block sticky top-24;
+    }
+
+    .panduan-toc-inner {
+        @apply max-h-[calc(100vh-7rem)] overflow-y-auto;
+    }
+
+    .sidebar-section-toggle {
+        @apply w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:text-gray-700 dark:hover:text-gray-200 transition-colors;
+    }
+
+    .sidebar-link {
+        @apply flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-800 hover:text-primary-700 dark:hover:text-primary-300 border-l-2 border-transparent transition-colors;
+    }
+
+    .sidebar-link.active {
+        @apply bg-white dark:bg-gray-800 text-primary-700 dark:text-primary-300 font-medium border-l-2 border-primary-500;
+    }
+
+    .toc-link {
+        @apply block text-sm text-gray-600 dark:text-gray-400 hover:text-primary-700 dark:hover:text-primary-300 py-1 pl-3 border-l-2 border-transparent transition-colors;
+    }
+
+    .toc-link.active {
+        @apply text-primary-700 dark:text-primary-300 font-medium border-primary-500;
+    }
+
+    .toc-link.toc-h3 {
+        @apply pl-6 text-xs;
+    }
+
+    .mobile-backdrop {
+        @apply fixed inset-0 bg-black/50 z-30 lg:hidden hidden;
+    }
+
+    .mobile-backdrop.open {
+        @apply block;
+    }
+
+    .search-input {
+        @apply w-full pl-9 pr-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500;
+    }
+
+    .prose-doc {
+        @apply text-gray-700 dark:text-gray-300;
+    }
+
+    .prose-doc h1 {
+        @apply text-3xl font-bold text-gray-900 dark:text-gray-100 mb-4 mt-2;
+    }
+
+    .prose-doc h2 {
+        @apply text-2xl font-bold text-gray-900 dark:text-gray-100 mt-10 mb-4 scroll-mt-24 pb-2 border-b border-gray-200 dark:border-gray-700;
+    }
+
+    .prose-doc h3 {
+        @apply text-xl font-semibold text-gray-800 dark:text-gray-200 mt-8 mb-3;
+    }
+
+    .prose-doc p {
+        @apply text-gray-700 dark:text-gray-300 leading-relaxed mb-4;
+    }
+
+    .prose-doc ul {
+        @apply list-disc ml-6 mb-4 space-y-1 text-gray-700 dark:text-gray-300 marker:text-primary-500;
+    }
+
+    .prose-doc ol {
+        @apply list-decimal ml-6 mb-4 space-y-1 text-gray-700 dark:text-gray-300 marker:text-primary-500;
+    }
+
+    .prose-doc li {
+        @apply leading-relaxed;
+    }
+
+    .prose-doc a {
+        @apply text-primary-600 dark:text-primary-400 underline hover:text-primary-700 dark:hover:text-primary-300;
+    }
+
+    .prose-doc .anchor-link {
+        @apply ml-2 text-primary-500 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 text-base font-normal no-underline opacity-0 hover:opacity-100 transition-opacity;
+    }
+
+    .prose-doc strong {
+        @apply font-semibold text-gray-900 dark:text-gray-100;
+    }
+
+    .prose-doc code:not(pre code) {
+        @apply bg-gray-100 dark:bg-gray-800 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded text-sm font-mono;
+    }
+
+    .prose-doc pre {
+        @apply bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm mb-4 border border-gray-700;
+    }
+
+    .prose-doc blockquote {
+        @apply border-l-4 border-primary-500 bg-primary-50 dark:bg-primary-950/40 pl-4 pr-4 py-2 italic text-gray-700 dark:text-gray-300 my-4 rounded-r;
+    }
+
+    .prose-doc figure {
+        @apply my-6;
+    }
+
+    .prose-doc img {
+        @apply rounded-lg shadow-md border border-gray-200 dark:border-gray-700 max-w-full h-auto;
+    }
+
+    .prose-doc figcaption {
+        @apply mt-2 text-sm text-gray-500 dark:text-gray-400 text-center;
+    }
+
+    .prose-doc table {
+        @apply w-full my-6 text-sm border-collapse;
+    }
+
+    .prose-doc thead {
+        @apply bg-gray-100 dark:bg-gray-800;
+    }
+
+    .prose-doc th {
+        @apply text-left font-semibold text-gray-900 dark:text-gray-100 px-4 py-2.5 border border-gray-300 dark:border-gray-600;
+    }
+
+    .prose-doc td {
+        @apply text-gray-700 dark:text-gray-300 px-4 py-2 border border-gray-300 dark:border-gray-600 align-top;
+    }
+
+    .prose-doc tbody tr:nth-child(even) {
+        @apply bg-gray-50 dark:bg-gray-800/40;
+    }
+}
+
+.panduan-sidebar.open {
+    @apply translate-x-0;
+}
+
+/* ===== Custom Scrollbar for Panduan Sidebar — Soft Style ===== */
+
+/* Firefox */
+.panduan-sidebar {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+.panduan-sidebar:hover {
+    scrollbar-color: theme('colors.gray.300') transparent;
+}
+
+/* Chrome, Safari, Edge */
+.panduan-sidebar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.panduan-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.panduan-sidebar::-webkit-scrollbar-button {
+    display: none;
+}
+
+.panduan-sidebar::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+}
+
+.panduan-sidebar:hover::-webkit-scrollbar-thumb {
+    background-color: theme('colors.gray.300');
+}
+
+.panduan-sidebar:hover::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.gray.400');
+}
+
+/* Dark mode — Firefox */
+.dark .panduan-sidebar:hover {
+    scrollbar-color: theme('colors.gray.600') transparent;
+}
+
+/* Dark mode — Chrome, Safari, Edge */
+.dark .panduan-sidebar:hover::-webkit-scrollbar-thumb {
+    background-color: theme('colors.gray.600');
+}
+
+.dark .panduan-sidebar:hover::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.gray.500');
+}
+
+/* ===== Custom Scrollbar for TOC — Soft Style ===== */
+
+/* Firefox */
+.panduan-toc-inner {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+.panduan-toc-inner:hover {
+    scrollbar-color: theme('colors.gray.300') transparent;
+}
+
+/* Chrome, Safari, Edge */
+.panduan-toc-inner::-webkit-scrollbar {
+    width: 6px;
+}
+
+.panduan-toc-inner::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.panduan-toc-inner::-webkit-scrollbar-button {
+    display: none;
+}
+
+.panduan-toc-inner::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+}
+
+.panduan-toc-inner:hover::-webkit-scrollbar-thumb {
+    background-color: theme('colors.gray.300');
+}
+
+.panduan-toc-inner:hover::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.gray.400');
+}
+
+/* Dark mode — Firefox */
+.dark .panduan-toc-inner:hover {
+    scrollbar-color: theme('colors.gray.600') transparent;
+}
+
+/* Dark mode — Chrome, Safari, Edge */
+.dark .panduan-toc-inner:hover::-webkit-scrollbar-thumb {
+    background-color: theme('colors.gray.600');
+}
+
+.dark .panduan-toc-inner:hover::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.gray.500');
+}
+
+/* ===== Custom Scrollbar for Body — Theme-Aware ===== */
+
+/* Firefox */
+html {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.gray.300') transparent;
+}
+
+/* Chrome, Safari, Edge */
+html::-webkit-scrollbar {
+    width: 8px;
+}
+
+html::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+html::-webkit-scrollbar-button {
+    display: none;
+}
+
+html::-webkit-scrollbar-thumb {
+    background-color: theme('colors.gray.300');
+    border-radius: 4px;
+}
+
+html::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.gray.400');
+}
+
+/* Dark mode — Firefox */
+.dark html {
+    scrollbar-color: theme('colors.gray.600') transparent;
+}
+
+/* Dark mode — Chrome, Safari, Edge */
+.dark html::-webkit-scrollbar-thumb {
+    background-color: theme('colors.gray.600');
+}
+
+.dark html::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.gray.500');
+}

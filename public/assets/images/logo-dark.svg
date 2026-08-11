@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <!-- Gradient untuk pill besar -->
+    <linearGradient id="bigPillGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2DD4BF" />
+      <stop offset="50%" stop-color="#14B8A6" />
+      <stop offset="100%" stop-color="#0D9488" />
+    </linearGradient>
+    
+    <!-- Gradient untuk pill bagian bawah -->
+    <linearGradient id="bigPillBottom" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    
+    <!-- Gradient untuk jendela -->
+    <linearGradient id="windowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047" />
+      <stop offset="100%" stop-color="#EAB308" />
+    </linearGradient>
+    
+    <!-- Gradient untuk pil kecil -->
+    <radialGradient id="smallPillGrad1" cx="30%" cy="30%">
+      <stop offset="0%" stop-color="#FCA5A5" />
+      <stop offset="100%" stop-color="#EF4444" />
+    </radialGradient>
+    
+    <radialGradient id="smallPillGrad2" cx="30%" cy="30%">
+      <stop offset="0%" stop-color="#93C5FD" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </radialGradient>
+    
+    <radialGradient id="smallPillGrad3" cx="30%" cy="30%">
+      <stop offset="0%" stop-color="#FDE047" />
+      <stop offset="100%" stop-color="#EAB308" />
+    </radialGradient>
+    
+    <!-- Shadow filter -->
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+    
+    <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    
+    <!-- Glow effect untuk dark mode -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="strongGlow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background gelap -->
+  <circle cx="100" cy="100" r="95" fill="#0F172A" />
+  <circle cx="100" cy="100" r="95" fill="none" stroke="#14B8A6" stroke-width="4" />
+  <circle cx="100" cy="100" r="88" fill="none" stroke="#2DD4BF" stroke-width="2" stroke-dasharray="8,4" opacity="0.4"/>
+  
+  <!-- Pill besar (kapsul utama) -->
+  <g filter="url(#shadow)">
+    <!-- Bagian atas pill -->
+    <path d="M 60 100 L 60 70 A 40 40 0 0 1 140 70 L 140 100 Z" fill="url(#bigPillGrad)" />
+    <!-- Bagian bawah pill -->
+    <path d="M 60 100 L 60 130 A 40 40 0 0 0 140 130 L 140 100 Z" fill="url(#bigPillBottom)" />
+    <!-- Garis tengah pill -->
+    <line x1="60" y1="100" x2="140" y2="100" stroke="#2DD4BF" stroke-width="2" />
+    <!-- Highlight pada pill -->
+    <ellipse cx="85" cy="75" rx="15" ry="8" fill="#ffffff" opacity="0.3" />
+  </g>
+  
+  <!-- Pintu/Jendela di dalam pill -->
+  <g transform="translate(100, 100)">
+    <!-- Frame pintu -->
+    <rect x="-25" y="-30" width="50" height="60" rx="3" fill="#0D9488" filter="url(#softShadow)" />
+    <!-- Pintu -->
+    <rect x="-20" y="-25" width="40" height="50" rx="2" fill="url(#windowGrad)" />
+    <!-- Kaca jendela -->
+    <rect x="-15" y="-20" width="30" height="25" rx="1" fill="#FEF08A" stroke="#EAB308" stroke-width="1" />
+    <!-- Cross pada jendela -->
+    <line x1="0" y1="-15" x2="0" y2="0" stroke="#EAB308" stroke-width="2" stroke-linecap="round" />
+    <line x1="-7" y1="-7" x2="7" y2="-7" stroke="#EAB308" stroke-width="2" stroke-linecap="round" />
+    <!-- Gagang pintu -->
+    <circle cx="12" cy="10" r="3" fill="#2DD4BF" />
+    <circle cx="12" cy="10" r="1.5" fill="#5EEAD4" />
+  </g>
+  
+  <!-- Pil kecil yang mengambang -->
+  <!-- Pil merah -->
+  <g transform="translate(45, 60) rotate(-30)" filter="url(#softShadow)">
+    <rect x="-12" y="-5" width="24" height="10" rx="5" fill="url(#smallPillGrad1)" />
+    <line x1="0" y1="-5" x2="0" y2="5" stroke="#DC2626" stroke-width="1" />
+  </g>
+  
+  <!-- Pil biru -->
+  <g transform="translate(155, 70) rotate(45)" filter="url(#softShadow)">
+    <rect x="-10" y="-4" width="20" height="8" rx="4" fill="url(#smallPillGrad2)" />
+    <line x1="0" y1="-4" x2="0" y2="4" stroke="#2563EB" stroke-width="1" />
+  </g>
+  
+  <!-- Pil kuning -->
+  <g transform="translate(160, 140) rotate(-20)" filter="url(#softShadow)">
+    <rect x="-8" y="-3" width="16" height="6" rx="3" fill="url(#smallPillGrad3)" />
+    <line x1="0" y1="-3" x2="0" y2="3" stroke="#CA8A04" stroke-width="1" />
+  </g>
+  
+  <!-- Pil merah kecil -->
+  <g transform="translate(40, 135) rotate(60)" filter="url(#softShadow)">
+    <rect x="-6" y="-2.5" width="12" height="5" rx="2.5" fill="#FCA5A5" stroke="#EF4444" stroke-width="0.8" />
+  </g>
+  
+  <!-- Titik-titik dekoratif (sparkles) dengan glow kuat -->
+  <circle cx="50" cy="45" r="2" fill="#FDE047" filter="url(#strongGlow)" />
+  <circle cx="150" cy="50" r="1.5" fill="#2DD4BF" filter="url(#strongGlow)" />
+  <circle cx="170" cy="110" r="2" fill="#FCA5A5" filter="url(#strongGlow)" />
+  <circle cx="35" cy="100" r="1.5" fill="#93C5FD" filter="url(#strongGlow)" />
+  <circle cx="145" cy="165" r="1.5" fill="#FDE047" filter="url(#strongGlow)" />
+  <circle cx="60" cy="160" r="2" fill="#2DD4BF" filter="url(#strongGlow)" />
+  
+  <!-- Bintang/sparkle shapes -->
+  <g transform="translate(55, 50)">
+    <path d="M 0 -4 L 1 -1 L 4 0 L 1 1 L 0 4 L -1 1 L -4 0 L -1 -1 Z" fill="#FDE047" opacity="0.9" filter="url(#glow)" />
+  </g>
+  <g transform="translate(155, 55)">
+    <path d="M 0 -3 L 0.8 -0.8 L 3 0 L 0.8 0.8 L 0 3 L -0.8 0.8 L -3 0 L -0.8 -0.8 Z" fill="#2DD4BF" opacity="0.9" filter="url(#glow)" />
+  </g>
+</svg>
