@@ -1,0 +1,40 @@
+name: PHP Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        php: [8.3, 8.4]
+        laravel: [13.x]
+        dependency-version: [prefer-stable]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ctype, curl, dom, fileinfo, filter, hash, intl, mbstring, openssl, pcre, pdo, session, tokenizer, xml
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache dependencies
+        uses: shivammathur/getcomposer-docker-cache@v2
+
+      - name: Install dependencies
+        run: composer update --${{ matrix.dependency-version }} --no-interaction --no-progress --prefer-dist --no-suggest
+
+      - name: Execute tests
+        run: php artisan test --compact
+        env:
+          APP_ENV: testing
