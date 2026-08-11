@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Backup\BackupsPage;
 use App\Filament\Pages\CustomDashboard;
+use App\Filament\Pages\ImportTabulasiPage;
 use App\Filament\Pages\SetupWizard;
 use App\Filament\Resources\AlokasiDana\AlokasiDanaPage;
 use App\Filament\Resources\DashboardAi\DashboardAiPage;
@@ -74,6 +75,7 @@ class AdminPanelProvider extends PanelProvider
                 CustomDashboard::class,
                 DashboardAiPage::class,
                 AlokasiDanaPage::class,
+                ImportTabulasiPage::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
