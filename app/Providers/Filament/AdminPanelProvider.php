@@ -5,11 +5,8 @@ namespace App\Providers\Filament;
 use App\Filament\Backup\BackupsPage;
 use App\Filament\Pages\CustomDashboard;
 use App\Filament\Pages\ImportTabulasiPage;
-use App\Filament\Pages\SetupWizard;
 use App\Filament\Resources\AlokasiDana\AlokasiDanaPage;
 use App\Filament\Resources\DashboardAi\DashboardAiPage;
-use App\Http\Middleware\AllowSetupWizardWithoutAuth;
-use App\Http\Middleware\RedirectIfSetupNotCompleted;
 use App\Http\Middleware\UpdateUserLastActive;
 use DutchCodingCompany\FilamentSocialite\FilamentSocialitePlugin;
 use DutchCodingCompany\FilamentSocialite\Provider;
@@ -71,7 +68,6 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\Filament\Clusters')
             ->pages([
-                SetupWizard::class,
                 CustomDashboard::class,
                 DashboardAiPage::class,
                 AlokasiDanaPage::class,
@@ -134,10 +130,8 @@ class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
-                RedirectIfSetupNotCompleted::class,
             ])
             ->authMiddleware([
-                AllowSetupWizardWithoutAuth::class,
                 UpdateUserLastActive::class,
             ])
             ->plugin(

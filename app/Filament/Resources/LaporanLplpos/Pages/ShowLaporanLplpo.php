@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\LaporanLplpos\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\LaporanLplpos\LaporanLplpoResource;
 use App\Models\DetailLplpo;
 use App\Models\LaporanLplpo;
@@ -304,7 +303,7 @@ class ShowLaporanLplpo extends ViewRecord implements HasTable
             ->label('Cetak PDF')
             ->icon('heroicon-o-printer')
             ->color('primary')
-            ->url(fn () => CetakPdfPage::getUrl(['type' => 'lplpo', 'id' => $this->record->id]), shouldOpenInNewTab: true);
+            ->url(fn () => route('admin.lplpo.cetak-pdf', ['lplpo' => $this->record->id]), shouldOpenInNewTab: true);
     }
 
     public static function getNamaBulan(int $bulan): string

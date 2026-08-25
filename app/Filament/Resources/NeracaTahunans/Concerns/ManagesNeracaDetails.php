@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\NeracaTahunans\Concerns;
 
 use App\Models\Obat;
-use App\Models\RiwayatStok;
 use App\Models\StokFaskes;
 use App\Models\StokGudang;
+use App\Services\NeracaTahunanService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -333,116 +333,9 @@ trait ManagesNeracaDetails
             $fasilitasId = null;
         }
 
-        $baseQuery = RiwayatStok::query()->when(
-            is_null($fasilitasId),
-            fn ($q) => $q->whereNull('fasilitas_id'),
-            fn ($q) => $q->where('fasilitas_id', $fasilitasId),
-        );
-
-        $obatIdsFromRiwayat = (clone $baseQuery)
-            ->whereYear('tanggal', $tahun)
-            ->distinct()
-            ->pluck('obat_id');
-
-        $obatIdsFromStok = is_null($fasilitasId)
-            ? StokGudang::where('jumlah', '>', 0)->pluck('obat_id')
-            : StokFaskes::where('fasilitas_id', $fasilitasId)
-                ->where('jumlah', '>', 0)
-                ->pluck('obat_id');
-
-        $obatIds = $obatIdsFromRiwayat
-            ->merge($obatIdsFromStok)
-            ->unique()
-            ->values();
-
-        if ($obatIds->isEmpty()) {
-            return;
-        }
-
-        $obatMap = Obat::whereIn('id', $obatIds)
-            ->pluck('harga_satuan', 'id');
-
-        $this->details = [];
-
-        foreach ($obatIds as $i => $obatId) {
-            $obat = Obat::find($obatId);
-            $hargaSatuan = (float) ($obatMap->get($obatId) ?? 0);
-
-            $obatBaseQuery = (clone $baseQuery)->where('obat_id', $obatId);
-
-            $stokAwalRecord = (clone $obatBaseQuery)
-                ->whereDate('tanggal', '<', "{$tahun}-01-01")
-                ->orderBy('tanggal', 'desc')
-                ->orderBy('id', 'desc')
-                ->first();
-
-            $stokAwal = $stokAwalRecord?->stok_sesudah ?? 0;
-
-            $totalMasuk = abs((clone $obatBaseQuery)
-                ->whereYear('tanggal', $tahun)
-                ->whereIn('tipe', ['masuk', 'distribusi_masuk'])
-                ->sum('jumlah'));
-
-            $totalKeluar = abs((clone $obatBaseQuery)
-                ->whereYear('tanggal', $tahun)
-                ->whereIn('tipe', ['keluar', 'distribusi_keluar', 'rusak', 'hilang', 'expired'])
-                ->sum('jumlah'));
-
-            $stokAkhirRecord = (clone $obatBaseQuery)
-                ->whereYear('tanggal', $tahun)
-                ->orderBy('tanggal', 'desc')
-                ->orderBy('id', 'desc')
-                ->first();
-
-            if ($stokAkhirRecord !== null) {
-                $stokAkhir = $stokAkhirRecord->stok_sesudah;
-            } elseif ($stokAwalRecord === null) {
-                $stokAkhir = is_null($fasilitasId)
-                    ? (StokGudang::where('obat_id', $obatId)->value('jumlah') ?? 0)
-                    : (StokFaskes::where('fasilitas_id', $fasilitasId)->where('obat_id', $obatId)->value('jumlah') ?? 0);
-            } else {
-                $stokAkhir = $stokAwal;
-            }
-
-            $nilaiStok = $hargaSatuan !== null
-                ? $stokAkhir * $hargaSatuan
-                : 0;
-
-            $stokOptimum = self::hitungStokOptimum((int) $totalKeluar);
-            $permintaan = self::hitungPermintaan((int) $totalKeluar, $stokAkhir);
-
-            $this->details[] = [
-                '_key' => $i,
-                'id' => null,
-                'obat_id' => $obatId,
-                'obat_name' => $obat?->nama_obat ?? '',
-                'stok_awal' => (int) $stokAwal,
-                'total_masuk' => (int) $totalMasuk,
-                'total_keluar' => (int) $totalKeluar,
-                'stok_akhir' => (int) $stokAkhir,
-                'stok_optimum' => $stokOptimum,
-                'permintaan' => $permintaan,
-                'harga_satuan' => $hargaSatuan,
-                'nilai_stok' => $nilaiStok,
-                'keterangan' => null,
-            ];
-        }
+        $this->details = app(NeracaTahunanService::class)->buildDetails($fasilitasId, $tahun);
 
         $this->flushCachedTableRecords();
-    }
-
-    private static function hitungStokOptimum(int $totalPemakaian, int $periodeBulan = 12): int
-    {
-        $rataBulan = max(0, $totalPemakaian / max(1, $periodeBulan));
-
-        return (int) ceil($rataBulan * 1.2);
-    }
-
-    private static function hitungPermintaan(int $totalPemakaian, int $stokAkhir, int $periodeBulan = 12): int
-    {
-        $rataBulan = max(0, $totalPemakaian / max(1, $periodeBulan));
-
-        return max(0, (int) ceil($rataBulan * 3) - $stokAkhir);
     }
 
     protected function getTotalNilaiStok(): float

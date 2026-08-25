@@ -18,7 +18,6 @@ class RoleAndPermissionSeeder extends Seeder
         Permission::firstOrCreate(['name' => 'view_laporan']);
         Permission::firstOrCreate(['name' => 'manage_laporan']);
         Permission::firstOrCreate(['name' => 'input_laporan']);
-        Permission::firstOrCreate(['name' => 'manage_pengaturan_pdf']);
         Permission::firstOrCreate(['name' => 'manage_pengaturan_nomor']);
         Permission::firstOrCreate(['name' => 'manage_backup']);
 
@@ -87,7 +86,6 @@ class RoleAndPermissionSeeder extends Seeder
             'view_neraca_tahunan',
             'view_model_prediksi', 'view_prediksi_kebutuhan',
             'view_activity_logs',
-            'manage_pengaturan_pdf',
             'view_retur_obat', 'create_retur_obat', 'update_retur_obat', 'delete_retur_obat',
             'view_inspeksi_retur', 'create_inspeksi_retur', 'update_inspeksi_retur',
             'view_pemakaian_obat',
@@ -110,7 +108,6 @@ class RoleAndPermissionSeeder extends Seeder
             'view_alokasi_dana',
             'view_model_prediksi', 'view_prediksi_kebutuhan',
             'view_activity_logs',
-            'manage_pengaturan_pdf',
             'view_user_preferences', 'create_user_preferences', 'update_user_preferences', 'delete_user_preferences',
             'view_retur_obat', 'update_retur_obat',
             'view_inspeksi_retur',
@@ -132,12 +129,12 @@ class RoleAndPermissionSeeder extends Seeder
             'view_opname_stok', 'create_opname_stok', 'update_opname_stok', 'delete_opname_stok',
             'view_retur_obat', 'create_retur_obat', 'update_retur_obat', 'delete_retur_obat',
             'view_activity_logs',
-            'manage_pengaturan_pdf',
         ]);
 
         // ──────────── pustu ────────────
         $pustu->givePermissionTo([
             'view_dashboard', 'input_laporan',
+            'view_retur_obat',
             'view_permintaan_obat', 'create_permintaan_obat', 'update_permintaan_obat',
             'view_distribusi_obat', 'update_distribusi_obat',
             'view_stok_faskes',
@@ -151,37 +148,8 @@ class RoleAndPermissionSeeder extends Seeder
             'view_prediksi_kebutuhan',
         ]);
 
-        // Seed default PDF settings (global)
-        $this->seedDefaultPdfSettings();
-
         // Seed default nomor format patterns (global)
         $this->seedDefaultNomorFormats();
-    }
-
-    private function seedDefaultPdfSettings(): void
-    {
-        $defaults = [
-            'kop_baris_1' => 'PEMERINTAH KABUPATEN KUPANG',
-            'kop_baris_2' => 'DINAS KESEHATAN KABUPATEN KUPANG',
-            'kop_alamat' => 'Jl. El Tari II, Kec. Kupang Tengah, Kabupaten Kupang, NTT',
-            'logo_path' => '',
-            'font_family' => 'DejaVu Sans',
-            'font_size' => '12',
-            'font_size_kop1' => '14',
-            'font_size_kop2' => '16',
-            'font_size_body' => '12',
-            'margin_top' => '18',
-            'margin_bottom' => '25',
-            'margin_left' => '18',
-            'margin_right' => '18',
-        ];
-
-        foreach ($defaults as $key => $value) {
-            PengaturanLaporan::firstOrCreate(
-                ['fasilitas_id' => null, 'grup' => 'pdf', 'key' => $key],
-                ['value' => $value],
-            );
-        }
     }
 
     private function seedDefaultNomorFormats(): void

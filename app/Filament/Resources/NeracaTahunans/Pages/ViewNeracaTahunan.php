@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\NeracaTahunans\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\NeracaTahunans\NeracaTahunanResource;
 use App\Models\DetailNeracaTahunan;
 use Filament\Actions\Action;
@@ -240,7 +239,7 @@ class ViewNeracaTahunan extends ViewRecord implements HasTable
                 ->icon('heroicon-o-printer')
                 ->color('primary')
                 ->visible(fn (): bool => $this->record?->status === 'selesai')
-                ->url(fn (): string => CetakPdfPage::getUrl(['type' => 'neraca', 'id' => $this->record->id]), shouldOpenInNewTab: true),
+                ->url(fn (): string => route('admin.neraca.cetak-pdf', ['neraca' => $this->record->id]), shouldOpenInNewTab: true),
             Action::make('export_excel')
                 ->label('Export Excel')
                 ->icon('heroicon-o-arrow-down-tray')

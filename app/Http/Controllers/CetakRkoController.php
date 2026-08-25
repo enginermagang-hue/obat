@@ -4,27 +4,29 @@ namespace App\Http\Controllers;
 
 use App\Models\LaporanRko;
 use App\Services\PdfSettingsService;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use League\Csv\Writer;
 use Spatie\LaravelPdf\Facades\Pdf;
 
 class CetakRkoController extends Controller
 {
+    use AuthorizesRequests;
+
     public function cetakPdf(LaporanRko $rko)
     {
-        if ($rko->status !== 'disetujui') {
-            abort(403, 'Hanya RKO yang sudah disetujui dapat dicetak.');
-        }
+        $this->authorize('view', $rko);
+        abort_if($rko->status !== 'disetujui', 403, 'Hanya RKO yang sudah disetujui dapat dicetak.');
 
-        $rko->load(['details.obat', 'fasilitas', 'dibuatOleh', 'disetujuiOleh']);
+        $rko->load([
+            'details.obat',
+            'fasilitas',
+            'dibuatOleh',
+            'disetujuiOleh',
+        ]);
+
         $faskes = $rko->fasilitas;
-
         $kop = PdfSettingsService::getKopSurat($faskes?->id);
-        $layout = PdfSettingsService::getLayout();
+        $layout = PdfSettingsService::DEFAULT_LAYOUT;
 
         $filename = "rko-{$rko->nomor_rko}-{$rko->periode_tahun}.pdf";
 
@@ -48,137 +50,60 @@ class CetakRkoController extends Controller
 
     public function cetakXls(LaporanRko $rko)
     {
-        if ($rko->status !== 'disetujui') {
-            abort(403, 'Hanya RKO yang sudah disetujui dapat diekspor.');
-        }
+        $this->authorize('view', $rko);
+        abort_if($rko->status !== 'disetujui', 403, 'Hanya RKO yang sudah disetujui dapat diekspor.');
 
-        $rko->load(['details.obat', 'fasilitas', 'dibuatOleh', 'disetujuiOleh']);
+        $rko->load(['details.obat', 'fasilitas']);
 
-        $spreadsheet = new Spreadsheet;
-        $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('RKO '.$rko->periode_tahun);
+        $details = $rko->details()->with('obat')->get();
 
-        $boldStyle = ['font' => ['bold' => true]];
-        $headerFill = [
-            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '374151']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'wrapText' => true],
-            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1D5DB']]],
-        ];
-        $cellBorder = [
-            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1D5DB']]],
-        ];
-        $numberFormat = [NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1];
-        $currencyFormat = ['numberFormat' => ['formatCode' => '#,##0']];
-
-        $row = 1;
-        $infoRows = [
-            ['Nomor RKO', $rko->nomor_rko],
-            ['Fasilitas Kesehatan', $rko->fasilitas?->nama ?? '-'],
-            ['Periode Tahun', $rko->periode_tahun],
-            ['Total Anggaran', $rko->total_anggaran],
-            ['Tanggal Pengajuan', $rko->tanggal_pengajuan?->format('d/m/Y') ?? '-'],
-            ['Tanggal Disetujui', $rko->tanggal_disetujui?->format('d/m/Y') ?? '-'],
-            ['Dibuat Oleh', $rko->dibuatOleh?->name ?? '-'],
-            ['Disetujui Oleh', $rko->disetujuiOleh?->name ?? '-'],
-        ];
-
-        foreach ($infoRows as $infoRow) {
-            $sheet->setCellValue("A{$row}", $infoRow[0])->getStyle("A{$row}")->applyFromArray($boldStyle);
-            $sheet->setCellValue("B{$row}", $infoRow[1]);
-            if ($infoRow[0] === 'Total Anggaran' && is_numeric($infoRow[1])) {
-                $sheet->getStyle("B{$row}")->applyFromArray($currencyFormat);
-            }
-            $row++;
-        }
-
-        $row += 1;
-
-        $headers = [
+        $csv = Writer::createFromString('');
+        $csv->insertOne([
             'No', 'Kode', 'Nama Obat', 'Satuan', 'ABC', 'VEN',
-            'Pemakaian Th Lalu', 'Rata-rata/Bln', 'Sisa Stok',
-            'Kebutuhan 18 Bln', 'Rencana Kebutuhan', 'Usulan',
-            'Buffer (%)', 'Buffer Qty', 'Total Kebutuhan',
-            'Harga Perkiraan', 'Total Harga', 'Keterangan',
-        ];
+            'Pakai Th Lalu', 'Rata²/Bln', 'Sisa Stok', 'Keb. 18 Bln',
+            'Rencana Keb.', 'Usulan', 'Buffer %', 'Buffer Qty',
+            'Total Keb.', 'Harga Perkiraan', 'Total Harga', 'Keterangan',
+        ]);
 
-        $col = 'A';
-        foreach ($headers as $header) {
-            $sheet->setCellValue("{$col}{$row}", $header);
-            $col++;
-        }
-        $lastCol = chr(ord('A') + count($headers) - 1);
-        $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray($headerFill);
+        $totalAnggaran = 0.0;
 
-        $row++;
-        $dataStartRow = $row;
-
-        foreach ($rko->details as $index => $detail) {
-            $col = 'A';
-            $values = [
-                $index + 1,
+        foreach ($details as $i => $detail) {
+            $csv->insertOne([
+                $i + 1,
                 $detail->obat?->kode_obat ?? '-',
                 $detail->obat?->nama_obat ?? '-',
                 $detail->obat?->satuan ?? '-',
                 $detail->abc_kategori ?? '-',
                 $detail->ven_kategori ?? '-',
-                $detail->pemakaian_tahun_sebelumnya,
-                $detail->rata_rata_pemakaian_bulanan,
-                $detail->stok_akhir,
-                $detail->kebutuhan_tahunan,
-                $detail->rencana_kebutuhan,
-                $detail->usulan,
-                $detail->buffer_stock_persen,
-                $detail->buffer_stok_qty,
-                $detail->total_kebutuhan,
-                $detail->harga_perkiraan,
-                $detail->total_harga,
-                $detail->keterangan ?? '-',
-            ];
+                (int) ($detail->pemakaian_tahun_sebelumnya ?? 0),
+                (int) ($detail->rata_rata_pemakaian_bulanan ?? 0),
+                (int) ($detail->stok_akhir ?? 0),
+                (int) ($detail->kebutuhan_tahunan ?? 0),
+                (int) ($detail->rencana_kebutuhan ?? 0),
+                (int) ($detail->usulan ?? 0),
+                (float) ($detail->buffer_stock_persen ?? 0),
+                (int) ($detail->buffer_stok_qty ?? 0),
+                (int) ($detail->total_kebutuhan ?? 0),
+                (float) ($detail->harga_perkiraan ?? 0),
+                (float) ($detail->total_harga ?? 0),
+                $detail->keterangan ?? '',
+            ]);
 
-            foreach ($values as $value) {
-                $sheet->setCellValue("{$col}{$row}", $value);
-                $col++;
-            }
-
-            $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray($cellBorder);
-
-            $numberCols = ['G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O'];
-            foreach ($numberCols as $nc) {
-                $cellRef = "{$nc}{$row}";
-                if (is_numeric($sheet->getCell($cellRef)->getValue())) {
-                    $sheet->getStyle($cellRef)->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
-                }
-            }
-
-            $sheet->getStyle("P{$row}")->getNumberFormat()->setFormatCode('#,##0');
-            $sheet->getStyle("Q{$row}")->getNumberFormat()->setFormatCode('#,##0');
-
-            $row++;
+            $totalAnggaran += (float) ($detail->total_harga ?? 0);
         }
 
-        $totalRow = $row;
-        $sheet->setCellValue("A{$totalRow}", 'TOTAL')->getStyle("A{$totalRow}")->applyFromArray($boldStyle);
-        $sheet->setCellValue("Q{$totalRow}", "=SUM(Q{$dataStartRow}:Q".($totalRow - 1).')');
-        $sheet->getStyle("Q{$totalRow}")->applyFromArray(array_merge($boldStyle, $currencyFormat));
-        $sheet->getStyle("A{$totalRow}:{$lastCol}{$totalRow}")->applyFromArray([
-            'font' => ['bold' => true],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F3F4F6']],
-            'borders' => ['top' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '374151']]],
-        ]);
-
-        foreach (range('A', $lastCol) as $columnId) {
-            $sheet->getColumnDimension($columnId)->setAutoSize(true);
+        if ($details->isNotEmpty()) {
+            $csv->insertOne([
+                '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+                'Total Anggaran', '', round($totalAnggaran, 2), '',
+            ]);
         }
 
-        $writer = new Xlsx($spreadsheet);
+        $filename = "rko-{$rko->nomor_rko}-{$rko->periode_tahun}.csv";
 
-        $filename = "rko-{$rko->nomor_rko}-{$rko->periode_tahun}.xlsx";
-
-        return response()->streamDownload(function () use ($writer): void {
-            $writer->save('php://output');
-        }, $filename, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        return response($csv->getContent(), 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ]);
     }
 }

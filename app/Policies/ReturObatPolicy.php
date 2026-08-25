@@ -32,6 +32,11 @@ class ReturObatPolicy
             return true;
         }
 
+        if ($user->hasRole('admin_gudang')) {
+            return $returObat->fasilitas_pengirim_id === null
+                || $returObat->fasilitas_penerima_id === null;
+        }
+
         $userFaskesId = $user->fasilitas_kesehatan_id;
 
         if (blank($userFaskesId)) {
@@ -53,6 +58,10 @@ class ReturObatPolicy
     public function create(User $user): bool
     {
         if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        if ($user->hasRole('admin_gudang')) {
             return true;
         }
 
@@ -83,15 +92,26 @@ class ReturObatPolicy
             return true;
         }
 
+        if ($user->hasRole('admin_dinas')) {
+            return $returObat->status === 'menunggu_approval';
+        }
+
+        if ($user->hasRole('admin_gudang')) {
+            if ($returObat->fasilitas_pengirim_id === null) {
+                return in_array($returObat->status, ['draft', 'menunggu_approval'], true);
+            }
+
+            if ($returObat->fasilitas_penerima_id === null) {
+                return $returObat->status === 'dalam_pengiriman';
+            }
+
+            return false;
+        }
+
         $userFaskesId = $user->fasilitas_kesehatan_id;
 
         if (blank($userFaskesId)) {
             return false;
-        }
-
-        // Admin dinas: menyetujui/menolak
-        if ($user->hasRole('admin_dinas')) {
-            return $returObat->status === 'menunggu_approval';
         }
 
         // Admin gudang / User: sebagai pengirim (edit draft/menunggu_approval)
@@ -123,6 +143,11 @@ class ReturObatPolicy
 
         if ($user->hasRole('super_admin')) {
             return true;
+        }
+
+        if ($user->hasRole('admin_gudang')) {
+            return $returObat->fasilitas_pengirim_id === null
+                && $returObat->status === 'draft';
         }
 
         $userFaskesId = $user->fasilitas_kesehatan_id;

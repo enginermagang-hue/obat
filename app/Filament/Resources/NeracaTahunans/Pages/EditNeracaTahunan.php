@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\NeracaTahunans\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\NeracaTahunans\Concerns\ManagesNeracaDetails;
 use App\Filament\Resources\NeracaTahunans\NeracaTahunanResource;
+use App\Services\NeracaTahunanService;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Notifications\Notification;
@@ -94,6 +94,8 @@ class EditNeracaTahunan extends EditRecord implements HasSchemas, HasTable
                         'nilai_stok' => $detail['nilai_stok'],
                         'keterangan' => $detail['keterangan'] ?? null,
                     ]);
+
+                    app(NeracaTahunanService::class)->syncSumberDanaBreakdown($existingDetail);
                     $newDetailIds[] = $detail['id'];
                 }
             } else {
@@ -109,6 +111,8 @@ class EditNeracaTahunan extends EditRecord implements HasSchemas, HasTable
                     'nilai_stok' => $detail['nilai_stok'],
                     'keterangan' => $detail['keterangan'] ?? null,
                 ]);
+
+                app(NeracaTahunanService::class)->syncSumberDanaBreakdown($created);
                 $newDetailIds[] = $created->id;
             }
         }
@@ -211,7 +215,7 @@ class EditNeracaTahunan extends EditRecord implements HasSchemas, HasTable
                 ->label('Cetak PDF')
                 ->icon('heroicon-o-printer')
                 ->color('primary')
-                ->url(fn (): string => CetakPdfPage::getUrl(['type' => 'neraca', 'id' => $this->record->id]))
+                ->url(fn (): string => route('admin.neraca.cetak-pdf', ['neraca' => $this->record->id]))
                 ->openUrlInNewTab()
                 ->visible(fn (): bool => $this->record?->status === 'selesai'),
 

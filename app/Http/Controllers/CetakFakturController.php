@@ -22,7 +22,7 @@ class CetakFakturController extends Controller
 
         $faskes = $distribusi->fasilitasPengirim;
         $kop = PdfSettingsService::getKopSurat($faskes?->id);
-        $layout = PdfSettingsService::getLayout();
+        $layout = PdfSettingsService::DEFAULT_LAYOUT;
 
         $filename = "faktur-distribusi-{$distribusi->nomor_surat_jalan}.pdf";
 

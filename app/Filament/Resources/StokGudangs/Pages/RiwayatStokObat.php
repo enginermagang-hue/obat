@@ -14,7 +14,7 @@ use Filament\Resources\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Schema;
-use Filament\Tables;
+use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable as HasTableContract;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,7 +24,7 @@ use Illuminate\Support\HtmlString;
 class RiwayatStokObat extends Page implements HasForms, HasTableContract
 {
     use InteractsWithForms;
-    use Tables\Concerns\InteractsWithTable;
+    use InteractsWithTable;
 
     protected static string $resource = StokGudangResource::class;
 
@@ -120,59 +120,13 @@ class RiwayatStokObat extends Page implements HasForms, HasTableContract
         return $query;
     }
 
-    protected function getTableColumns(): array
+    public function table(Table $table): Table
     {
-        return [
-            Tables\Columns\TextColumn::make('tanggal')
-                ->label('Tanggal')
-                ->date('d/m/Y'),
-            Tables\Columns\TextColumn::make('tipe')
-                ->label('Tipe')
-                ->badge()
-                ->formatStateUsing(fn (string $state): string => RiwayatStoksTable::getTipeLabel($state))
-                ->color(fn (string $state): string => RiwayatStoksTable::getTipeColor($state)),
-            Tables\Columns\TextColumn::make('jumlah')
-                ->label('Jumlah')
-                ->alignRight()
-                ->numeric()
-                ->color(fn ($record): string => $record->tipe === 'keluar' || $record->tipe === 'distribusi_keluar' || $record->tipe === 'rusak' || $record->tipe === 'hilang' || $record->tipe === 'expired' ? 'danger' : 'success'),
-            Tables\Columns\TextColumn::make('stok_sebelum')
-                ->label('Stok Sebelum')
-                ->alignRight()
-                ->numeric()
-                ->toggleable(),
-            Tables\Columns\TextColumn::make('stok_sesudah')
-                ->label('Stok Sesudah')
-                ->alignRight()
-                ->numeric()
-                ->toggleable(),
-            Tables\Columns\TextColumn::make('user.name')
-                ->label('User')
-                ->toggleable(),
-            Tables\Columns\TextColumn::make('keterangan')
-                ->label('Keterangan')
-                ->toggleable(isToggledHiddenByDefault: true)
-                ->limit(50),
-            Tables\Columns\TextColumn::make('referensi_type')
-                ->label('Dokumen')
-                ->formatStateUsing(fn ($record): string => $this->getReferensiLabel($record))
-                ->toggleable(isToggledHiddenByDefault: true),
-        ];
-    }
-
-    protected function getDefaultTableSortColumn(): ?string
-    {
-        return 'tanggal';
-    }
-
-    protected function getDefaultTableSortDirection(): ?string
-    {
-        return 'desc';
-    }
-
-    protected function getTableRecordAction(): ?string
-    {
-        return null;
+        return RiwayatStoksTable::configure($table, [
+            'obat.kode_obat',
+            'obat.nama_obat',
+            'fasilitas.nama',
+        ]);
     }
 
     public function updatedSearch(): void
@@ -204,21 +158,5 @@ class RiwayatStokObat extends Page implements HasForms, HasTableContract
             ->components([
                 EmbeddedTable::make(),
             ]);
-    }
-
-    public function table(Table $table): Table
-    {
-        return $table;
-    }
-
-    private function getReferensiLabel($record): string
-    {
-        if ($record->referensi_type === null) {
-            return '-';
-        }
-
-        $class = class_basename($record->referensi_type);
-
-        return "{$class} #{$record->referensi_id}";
     }
 }

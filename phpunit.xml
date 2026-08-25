@@ -12,6 +12,7 @@
             <directory>tests/Feature</directory>
         </testsuite>
     </testsuites>
+    <execution parallel="true" processes="auto"/>
     <source>
         <include>
             <directory>app</directory>

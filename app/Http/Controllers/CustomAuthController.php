@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SetupConfiguration;
 use App\Models\User;
 use App\Services\ActivityLogService;
 use Illuminate\Http\Request;
@@ -15,10 +14,6 @@ class CustomAuthController extends Controller
     {
         if (Auth::check()) {
             return redirect()->intended(route('filament.admin.pages.custom-dashboard'));
-        }
-
-        if (! SetupConfiguration::isSetupCompleted()) {
-            return redirect()->route('setup-wizard.show');
         }
 
         return view('auth.login');
@@ -48,10 +43,6 @@ class CustomAuthController extends Controller
         app(ActivityLogService::class)->userLogin($user);
 
         $request->session()->regenerate();
-
-        if (! SetupConfiguration::isSetupCompleted()) {
-            return redirect()->route('setup-wizard.show');
-        }
 
         return redirect()->intended(route('filament.admin.pages.custom-dashboard'));
     }

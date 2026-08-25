@@ -136,6 +136,10 @@ class CreatePenerimaanStok extends CreateRecord
         $data['user_id'] = auth()->id();
         $data['status'] = $this->actionStatus ?? 'draft';
 
+        // Fasilitas penerima wajib dari user login - jangan bergantung pada
+        // hidden field yang bisa terkirim kosong (bug penerimaan distribusi).
+        $data['fasilitas_id'] ??= auth()->user()?->fasilitas_kesehatan_id;
+
         if (blank($data['nomor_penerimaan'] ?? null)) {
             $data['nomor_penerimaan'] = PenerimaanStok::generateNomorPenerimaan();
         }

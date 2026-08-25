@@ -3,21 +3,13 @@
 <head>
     <meta charset="utf-8">
     <title>@yield('title', 'Dokumen')</title>
-    @if($googleFontUrl)
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="{{ $googleFontUrl }}" rel="stylesheet">
-    @endif
     <style>
-        @if($googleFontUrl)
-        @import url('{{ $googleFontUrl }}');
-        @endif
         @page {
             margin: {{ $layout['margin_top'] }}mm {{ $layout['margin_right'] }}mm {{ $layout['margin_bottom'] }}mm {{ $layout['margin_left'] }}mm;
         }
         body {
             font-family: '{{ $layout['font_family'] }}', sans-serif;
-            font-size: {{ $layout['font_size_body'] }}pt;
+            font-size: 11pt;
             line-height: 1.4;
             margin: 0;
             padding: 0;
@@ -30,33 +22,36 @@
             border-bottom: 2px solid #374151;
         }
         .kop h1 {
-            font-size: {{ $layout['font_size_kop2'] }}pt;
-            margin: 0 0 4px;
+            font-size: 13pt;
+            line-height: 14pt;
+            margin: 0 0 2px;
             letter-spacing: 1px;
         }
         .kop .alamat {
-            @php $alamatSize = max(8, intval($layout['font_size_kop1']) - 4); @endphp
-            font-size: {{ $alamatSize }}pt;
+            @php $alamatSize = 9; @endphp
+            font-size: 9pt;
+            line-height: 10pt;
             margin: 0;
             color: #4b5563;
         }
         .kop .badge-kab {
-            font-size: {{ $layout['font_size_kop1'] }}pt;
+            font-size: 10pt;
             margin: 0 0 2px;
         }
         @php
-            $bodySize = intval($layout['font_size_body']);
-            $infoSize = max(8, $bodySize);
-            $itemsSize = max(8, $bodySize - 2);
-            $itemsHeaderSize = max(7, $bodySize - 3);
-            $subtitleSize = $bodySize + 2;
-            $subtitleDescSize = max(8, $bodySize - 2);
+            $bodySize = 11;
+            $infoSize = 11;
+            $itemsSize = 11;
+            $itemsHeaderSize = 11;
+            $subtitleSize = 13;
+            $subtitleDescSize = 11;
         @endphp
 
         @hasSection('subtitle')
         .subtitle {
             text-align: center;
             margin-bottom: 16px;
+            line-height: 12pt;
         }
         .subtitle h2 {
             font-size: {{ $subtitleSize }}pt;
@@ -81,7 +76,7 @@
             vertical-align: top;
         }
         .info-table .label {
-            width: 120px;
+            /*width: 120px;*/
             font-weight: bold;
         }
         .info-table .separator {
@@ -131,9 +126,9 @@
             border-collapse: collapse;
         }
         @php
-            $signatureSize = intval($layout['font_size_body']);
-            $namaSize = $signatureSize + 1;
-            $jabatanSize = max(8, $signatureSize - 1);
+            $signatureSize = 11;
+            $namaSize = 12;
+            $jabatanSize = 10;
         @endphp
         .tanda-tangan td {
             text-align: center;

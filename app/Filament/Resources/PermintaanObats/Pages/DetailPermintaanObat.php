@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\PermintaanObats\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\DistribusiObats\DistribusiObatResource;
 use App\Filament\Resources\PermintaanObats\PermintaanObatResource;
 use Filament\Actions\Action;
@@ -135,7 +134,7 @@ class DetailPermintaanObat extends ViewRecord implements HasTable
                 ->label('Cetak Faktur')
                 ->icon('heroicon-m-printer')
                 ->color('gray')
-                ->url(fn () => CetakPdfPage::getUrl(['type' => 'faktur-permintaan', 'id' => $this->record->id]))
+                ->url(fn () => route('admin.permintaan.cetak-faktur', ['permintaan' => $this->record->id]))
                 ->openUrlInNewTab()
                 ->visible(fn () => $this->record?->status !== 'draft'),
              **/

@@ -105,12 +105,17 @@ class OpnameStoksTable
                         $record->details()->whereNotIn('id', $existingIds)->delete();
 
                         foreach ($items as $item) {
+                            $selisih = match ($record->tipe) {
+                                'stok_awal', 'stok_baru' => (int) ($item['stok_fisik'] ?? 0),
+                                default => (int) ($item['stok_fisik'] ?? 0) - (int) ($item['stok_sistem'] ?? 0),
+                            };
+
                             $detailData = [
                                 'obat_id' => $item['obat_id'],
                                 'batch_id' => $item['batch_id'] ?? null,
                                 'stok_sistem' => $item['stok_sistem'] ?? 0,
                                 'stok_fisik' => $item['stok_fisik'] ?? 0,
-                                'selisih' => $item['selisih'] ?? 0,
+                                'selisih' => $selisih,
                                 'batch_number' => $item['batch_number'] ?? null,
                                 'tanggal_expired' => $item['tanggal_expired'] ?? null,
                                 'keterangan' => null,
@@ -128,7 +133,7 @@ class OpnameStoksTable
                         }
 
                         if ($record->status === 'selesai') {
-                            app(StokService::class)->prosesOpnameSelesai($record);
+                            app(StokService::class)->prosesOpnameSelesai($record->fresh('details'));
                         }
 
                         session()->forget(['_opname_prev_status', '_opname_prev_details']);

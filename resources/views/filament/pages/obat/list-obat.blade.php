@@ -33,45 +33,34 @@
             </button>
         </div>
 
-        <div x-data="{ open: false }" class="relative">
-            @php
-                $filterCount = 0;
-                if (filled($filterStatus)) {
-                    $filterCount++;
-                }
-                if (filled($filterKategori)) {
-                    $filterCount++;
-                }
-                if (filled($filterBentuk)) {
-                    $filterCount++;
-                }
-                if (filled($filterMetode)) {
-                    $filterCount++;
-                }
-            @endphp
+        <div class="flex items-center gap-2">
+            <div x-data="{ open: false }" class="relative">
+                @php
+                    $filterCount = 0;
+                    if (filled($filterStatus)) {
+                        $filterCount++;
+                    }
+                    if (filled($filterKategori)) {
+                        $filterCount++;
+                    }
+                    if (filled($filterBentuk)) {
+                        $filterCount++;
+                    }
+                    if (filled($filterMetode)) {
+                        $filterCount++;
+                    }
+                @endphp
 
-            <button @click="open = !open" type="button" class="ruang-obat-filter-btn mr-2">
-                <x-icon name="bx-filter" class="w-4 h-4 text-gray-500" />
-                Filter
-                @if ($filterCount > 0)
-                    <span class="ruang-obat-filter-badge">{{ $filterCount }}</span>
-                @endif
-                <x-heroicon-m-chevron-down class="h-3.5 w-3.5" />
-            </button>
+                <button @click="open = !open" type="button" class="ruang-obat-filter-btn !w-auto">
+                    <x-icon name="bx-filter" class="w-4 h-4 text-gray-500" />
+                    Filter
+                    @if ($filterCount > 0)
+                        <span class="ruang-obat-filter-badge">{{ $filterCount }}</span>
+                    @endif
+                    <x-heroicon-m-chevron-down class="h-3.5 w-3.5" />
+                </button>
 
-            <a href="{{ route('admin.obat.cetak-xls', [
-                'search' => $search,
-                'ven' => $filterVen,
-                'status' => $filterStatus,
-                'kategori' => $filterKategori,
-                'bentuk' => $filterBentuk,
-                'metode' => $filterMetode,
-            ]) }}" type="button" class="ruang-obat-filter-btn">
-                <x-heroicon-m-arrow-down-tray class="h-4 w-4" />
-                Export Excel
-            </a>
-
-            <div x-show="open" @click.away="open = false" x-cloak class="ruang-obat-filter-dropdown">
+                <div x-show="open" @click.away="open = false" x-cloak class="ruang-obat-filter-dropdown">
                 <div class="space-y-3">
                     <div>
                         <label class="ruang-obat-filter-label">Status</label>
@@ -120,7 +109,20 @@
                 </div>
             </div>
         </div>
+
+        <a href="{{ route('admin.obat.cetak-xls', [
+            'search' => $search,
+            'ven' => $filterVen,
+            'status' => $filterStatus,
+            'kategori' => $filterKategori,
+            'bentuk' => $filterBentuk,
+            'metode' => $filterMetode,
+        ]) }}" type="button" class="ruang-obat-filter-btn !w-auto">
+            <x-heroicon-m-arrow-down-tray class="h-4 w-4" />
+            Export Excel
+        </a>
     </div>
+</div>
 
     <div class="fi-table-card">
         {{ $this->table }}

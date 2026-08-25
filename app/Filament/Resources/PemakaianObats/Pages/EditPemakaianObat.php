@@ -15,6 +15,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Stokobat\Boxicons\Boxicon;
 
 class EditPemakaianObat extends EditRecord implements HasSchemas, HasTable
@@ -29,6 +30,8 @@ class EditPemakaianObat extends EditRecord implements HasSchemas, HasTable
     }
 
     protected static string $resource = PemakaianObatResource::class;
+
+    protected ?bool $hasDatabaseTransactions = true;
 
     public function mount(int|string $record): void
     {
@@ -118,8 +121,12 @@ class EditPemakaianObat extends EditRecord implements HasSchemas, HasTable
                 ->modalHeading('Hapus Pemakaian Obat')
                 ->modalDescription('Seluruh item obat dan stok akan dikembalikan. Tindakan ini tidak dapat dibatalkan.')
                 ->visible(fn (): bool => $this->canEditRecord())
-                ->before(function (Model $record): void {
-                    app(StokService::class)->reversePemakaian($record->loadMissing('details'));
+                ->using(function (Model $record): bool {
+                    return DB::transaction(function () use ($record): bool {
+                        app(StokService::class)->reversePemakaian($record->loadMissing('details'));
+
+                        return $record->delete();
+                    });
                 }),
         ];
     }

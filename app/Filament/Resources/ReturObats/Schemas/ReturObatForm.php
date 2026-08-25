@@ -43,7 +43,8 @@ class ReturObatForm
 
         $infoComponents[] = TextInput::make('nomor_retur')
             ->label('Nomor Retur')
-            ->required()
+            ->dehydrated()
+            ->required(fn ($component) => ! $component->isDisabled())
             ->maxLength(100)
             ->disabled(! $user?->hasRole('super_admin'))
             ->helperText('Akan terisi otomatis jika dikosongkan')

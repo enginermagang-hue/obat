@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\LaporanLplpos\Tables;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\LaporanLplpos\LaporanLplpoResource;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -70,7 +69,7 @@ class LaporanLplposTable
                     ->icon('heroicon-o-printer')
                     ->iconButton()
                     ->tooltip('Cetak PDF')
-                    ->url(fn ($record) => CetakPdfPage::getUrl(['type' => 'lplpo', 'id' => $record->id]), shouldOpenInNewTab: true),
+                    ->url(fn ($record) => route('admin.lplpo.cetak-pdf', ['lplpo' => $record->id]), shouldOpenInNewTab: true),
                 EditAction::make()
                     ->iconButton()
                     ->hidden(fn ($record) => ! auth()->user()?->can('update', $record)),

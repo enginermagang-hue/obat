@@ -28,6 +28,8 @@ class CreatePemakaianObat extends CreateRecord implements HasSchemas, HasTable
 
     protected static string $resource = PemakaianObatResource::class;
 
+    protected ?bool $hasDatabaseTransactions = true;
+
     protected static bool $canCreateAnother = false;
 
     protected function mutateFormDataBeforeCreate(array $data): array

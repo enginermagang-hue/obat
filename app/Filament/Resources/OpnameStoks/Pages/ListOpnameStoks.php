@@ -48,28 +48,23 @@ class ListOpnameStoks extends ListRecords
                     $data['user_id'] = auth()->id();
                     $data['fasilitas_id'] = auth()->user()->fasilitas_kesehatan_id ?? null;
 
-                    $tipe = $data['tipe'] ?? 'penyesuaian';
-                    foreach ($data['items'] ?? [] as &$item) {
-                        $item['selisih'] = match ($tipe) {
-                            'stok_awal', 'stok_baru' => $item['stok_fisik'] ?? 0,
-                            default => ($item['stok_fisik'] ?? 0) - ($item['stok_sistem'] ?? 0),
-                        };
-                    }
-
-                    session()->flash('_opname_create_items', $data['items'] ?? []);
-
                     return $data;
                 })
-                ->after(function ($record): void {
-                    $items = session()->get('_opname_create_items', []);
+                ->after(function ($record, $data): void {
+                    $items = $data['items'] ?? [];
 
                     foreach ($items as $item) {
+                        $selisih = match ($record->tipe) {
+                            'stok_awal', 'stok_baru' => (int) ($item['stok_fisik'] ?? 0),
+                            default => (int) ($item['stok_fisik'] ?? 0) - (int) ($item['stok_sistem'] ?? 0),
+                        };
+
                         $record->details()->create([
                             'obat_id' => $item['obat_id'],
                             'batch_id' => $item['batch_id'] ?? null,
                             'stok_sistem' => $item['stok_sistem'] ?? 0,
                             'stok_fisik' => $item['stok_fisik'] ?? 0,
-                            'selisih' => $item['selisih'] ?? 0,
+                            'selisih' => $selisih,
                             'batch_number' => $item['batch_number'] ?? null,
                             'tanggal_expired' => $item['tanggal_expired'] ?? null,
                             'keterangan' => null,
@@ -77,10 +72,8 @@ class ListOpnameStoks extends ListRecords
                     }
 
                     if ($record->status === 'selesai') {
-                        app(StokService::class)->prosesOpnameSelesai($record);
+                        app(StokService::class)->prosesOpnameSelesai($record->fresh('details'));
                     }
-
-                    session()->forget('_opname_create_items');
                 })
                 ->successRedirectUrl(fn () => OpnameStokResource::getUrl('index')),
         ];

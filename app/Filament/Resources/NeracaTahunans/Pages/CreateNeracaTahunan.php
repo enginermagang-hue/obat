@@ -4,6 +4,7 @@ namespace App\Filament\Resources\NeracaTahunans\Pages;
 
 use App\Filament\Resources\NeracaTahunans\Concerns\ManagesNeracaDetails;
 use App\Filament\Resources\NeracaTahunans\NeracaTahunanResource;
+use App\Services\NeracaTahunanService;
 use App\Services\NomorFormatService;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -61,7 +62,7 @@ class CreateNeracaTahunan extends CreateRecord implements HasSchemas, HasTable
         }
 
         foreach ($this->details as $detail) {
-            $record->details()->create([
+            $created = $record->details()->create([
                 'obat_id' => $detail['obat_id'],
                 'stok_awal' => $detail['stok_awal'],
                 'total_masuk' => $detail['total_masuk'],
@@ -73,6 +74,8 @@ class CreateNeracaTahunan extends CreateRecord implements HasSchemas, HasTable
                 'nilai_stok' => $detail['nilai_stok'],
                 'keterangan' => $detail['keterangan'] ?? null,
             ]);
+
+            app(NeracaTahunanService::class)->syncSumberDanaBreakdown($created);
         }
 
         $totalItems = count($this->details);

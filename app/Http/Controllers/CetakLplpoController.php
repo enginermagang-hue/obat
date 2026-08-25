@@ -12,10 +12,8 @@ class CetakLplpoController extends Controller
     {
         $details = $lplpo->details()->with('obat')->get();
         $faskes = $lplpo->fasilitas;
-
-        $settings = PdfSettingsService::getSettings($faskes?->id);
         $kop = PdfSettingsService::getKopSurat($faskes?->id);
-        $layout = PdfSettingsService::getLayout();
+        $layout = PdfSettingsService::DEFAULT_LAYOUT;
 
         $filename = "lplpo-{$lplpo->nomor_laporan}-{$lplpo->periode_tahun}-{$lplpo->periode_bulan}.pdf";
 

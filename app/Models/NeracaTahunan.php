@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use App\Models\Traits\LogsActivity;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class NeracaTahunan extends Model
 {
+    use HasFactory;
     use LogsActivity;
 
     protected $table = 'neraca_tahunan';

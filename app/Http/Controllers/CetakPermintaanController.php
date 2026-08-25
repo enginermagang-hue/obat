@@ -22,7 +22,7 @@ class CetakPermintaanController extends Controller
 
         $faskes = $permintaan->fasilitasPengirim;
         $kop = PdfSettingsService::getKopSurat($faskes?->id);
-        $layout = PdfSettingsService::getLayout();
+        $layout = PdfSettingsService::DEFAULT_LAYOUT;
 
         $filename = 'permintaan-obat-'.str_replace('/', '_', $permintaan->nomor_permintaan).'.pdf';
 

@@ -7,14 +7,11 @@ use App\Filament\Resources\StokFaskes\StokFaskesResource;
 use App\Models\FasilitasKesehatan;
 use App\Models\Obat;
 use App\Models\RiwayatStok;
-use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Schema;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
-use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -75,88 +72,6 @@ class RiwayatStokFaskes extends Page implements HasTable
         return $query;
     }
 
-    protected function getTableColumns(): array
-    {
-        return [
-            TextColumn::make('tanggal')
-                ->label('Tanggal')
-                ->date('d/m/Y')
-                ->sortable(),
-            TextColumn::make('tipe')
-                ->label('Tipe')
-                ->badge()
-                ->sortable()
-                ->formatStateUsing(fn (string $state): string => RiwayatStoksTable::getTipeLabel($state))
-                ->color(fn (string $state): string => RiwayatStoksTable::getTipeColor($state)),
-            TextColumn::make('jumlah')
-                ->label('Jumlah')
-                ->sortable()
-                ->numeric()
-                ->color(fn ($record): string => in_array($record->tipe, ['keluar', 'distribusi_keluar', 'rusak', 'hilang', 'expired']) ? 'danger' : 'success'),
-            TextColumn::make('stok_sebelum')
-                ->label('Stok Sebelum')
-                ->sortable()
-                ->numeric()
-                ->toggleable(),
-            TextColumn::make('stok_sesudah')
-                ->label('Stok Sesudah')
-                ->sortable()
-                ->numeric()
-                ->toggleable(),
-            TextColumn::make('user.name')
-                ->label('User')
-                ->sortable()
-                ->toggleable(),
-            TextColumn::make('keterangan')
-                ->label('Keterangan')
-                ->toggleable(isToggledHiddenByDefault: true)
-                ->limit(50),
-            TextColumn::make('referensi_type')
-                ->label('Dokumen')
-                ->formatStateUsing(fn ($record): string => self::getReferensiLabel($record))
-                ->toggleable(isToggledHiddenByDefault: true),
-        ];
-    }
-
-    protected function getDefaultTableSortColumn(): ?string
-    {
-        return 'tanggal';
-    }
-
-    protected function getDefaultTableSortDirection(): ?string
-    {
-        return 'desc';
-    }
-
-    protected function getTableRecordAction(): ?string
-    {
-        return null;
-    }
-
-    protected function getTableFilters(): array
-    {
-        return [
-            Filter::make('tanggal')
-                ->label('Filter Tanggal')
-                ->schema([
-                    DatePicker::make('tanggal_dari')
-                        ->label('Dari Tanggal'),
-                    DatePicker::make('tanggal_sampai')
-                        ->label('Sampai Tanggal'),
-                ])
-                ->query(fn (Builder $query, array $data): Builder => $query
-                    ->when(
-                        $data['tanggal_dari'],
-                        fn (Builder $q, $date): Builder => $q->whereDate('tanggal', '>=', $date),
-                    )
-                    ->when(
-                        $data['tanggal_sampai'],
-                        fn (Builder $q, $date): Builder => $q->whereDate('tanggal', '<=', $date),
-                    ),
-                ),
-        ];
-    }
-
     public function content(Schema $schema): Schema
     {
         return $schema
@@ -167,17 +82,10 @@ class RiwayatStokFaskes extends Page implements HasTable
 
     public function table(Table $table): Table
     {
-        return $table;
-    }
-
-    private static function getReferensiLabel($record): string
-    {
-        if ($record->referensi_type === null) {
-            return '-';
-        }
-
-        $class = class_basename($record->referensi_type);
-
-        return "{$class} #{$record->referensi_id}";
+        return RiwayatStoksTable::configure($table, [
+            'obat.kode_obat',
+            'obat.nama_obat',
+            'fasilitas.nama',
+        ]);
     }
 }

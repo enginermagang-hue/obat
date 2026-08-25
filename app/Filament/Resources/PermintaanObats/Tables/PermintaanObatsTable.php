@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\PermintaanObats\Tables;
 
-use App\Filament\Pages\CetakPdfPage;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
@@ -135,7 +134,7 @@ class PermintaanObatsTable
                         ->label('Cetak Faktur')
                         ->icon(Boxicon::Printer)
                         ->color('gray')
-                        ->url(fn (Model $record): string => CetakPdfPage::getUrl(['type' => 'faktur-permintaan', 'id' => $record->id]))
+                        ->url(fn (Model $record): string => route('admin.permintaan.cetak-faktur', ['permintaan' => $record->id]))
                         ->openUrlInNewTab()
                         ->visible(fn (Model $record): bool => $record->status !== 'draft'),
                 ])

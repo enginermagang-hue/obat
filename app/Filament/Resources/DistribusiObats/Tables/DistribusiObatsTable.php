@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\DistribusiObats\Tables;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Models\DistribusiObat;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -65,7 +64,7 @@ class DistribusiObatsTable
                         ->label('Cetak Faktur')
                         ->icon('heroicon-o-printer')
                         ->color('primary')
-                        ->url(fn (DistribusiObat $record): string => CetakPdfPage::getUrl(['type' => 'faktur-distribusi', 'id' => $record->id]))
+                        ->url(fn (DistribusiObat $record): string => route('admin.distribusi.cetak-faktur', ['distribusi' => $record->id]))
                         ->openUrlInNewTab()
                         ->visible(fn (DistribusiObat $record): bool => $record->status !== 'draft'),
                     DeleteAction::make()

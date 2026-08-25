@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\DistribusiObats\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\DistribusiObats\DistribusiObatResource;
 use App\Models\DetailDistribusiObat;
 use App\Models\DetailPermintaanObat;
@@ -320,7 +319,7 @@ class EditDistribusiObat extends EditRecord implements HasSchemas, HasTable
                 ->label('Cetak Faktur')
                 ->icon('heroicon-o-printer')
                 ->color('primary')
-                ->url(fn (): string => CetakPdfPage::getUrl(['type' => 'faktur-distribusi', 'id' => $this->record->id]))
+                ->url(fn (): string => route('admin.distribusi.cetak-faktur', ['distribusi' => $this->record->id]))
                 ->openUrlInNewTab()
                 ->visible(fn (): bool => $this->record?->status !== 'draft'),
             Action::make('delete')

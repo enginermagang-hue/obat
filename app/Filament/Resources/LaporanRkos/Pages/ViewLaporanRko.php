@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\LaporanRkos\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\LaporanRkos\LaporanRkoResource;
 use App\Models\DetailRko;
 use App\Models\FasilitasKesehatan;
@@ -320,7 +319,7 @@ class ViewLaporanRko extends ViewRecord implements HasTable
                 ->icon('heroicon-o-printer')
                 ->color('primary')
                 ->visible(fn (): bool => $this->record?->status === 'disetujui')
-                ->url(fn (): string => CetakPdfPage::getUrl(['type' => 'rko', 'id' => $this->record->id]), shouldOpenInNewTab: true),
+                ->url(fn (): string => route('admin.rko.cetak-pdf', ['rko' => $this->record->id]), shouldOpenInNewTab: true),
             Action::make('cetak_xls')
                 ->label('Export XLS')
                 ->icon('heroicon-o-arrow-down-tray')

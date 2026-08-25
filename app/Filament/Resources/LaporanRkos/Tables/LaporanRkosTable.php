@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\LaporanRkos\Tables;
 
-use App\Filament\Pages\CetakPdfPage;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
@@ -120,7 +119,7 @@ class LaporanRkosTable
                     ->icon('heroicon-o-printer')
                     ->color('primary')
                     ->visible(fn ($record) => $record->status === 'disetujui')
-                    ->url(fn ($record) => CetakPdfPage::getUrl(['type' => 'rko', 'id' => $record->id]), shouldOpenInNewTab: true),
+                    ->url(fn ($record) => route('admin.rko.cetak-pdf', ['rko' => $record->id]), shouldOpenInNewTab: true),
                 Action::make('cetak_xls')
                     ->label('Export XLS')
                     ->icon('heroicon-o-arrow-down-tray')

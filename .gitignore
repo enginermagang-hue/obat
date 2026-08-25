@@ -90,3 +90,38 @@ AuthKeys.txt
 # Vite build output — regenerated via `npm run build`
 /public/build
 /public/fonts-manifest.dev.json
+
+sync_config.jsonc
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Local SQLite runtime databases (root-level test/dev DBs)
+/obat
+/obat-journal
+
+# Chromedriver binary (downloaded by Playwright/Dusk)
+/chromedriver-151/
+
+# Qoder CLI installer artifacts
+/install.cmd
+/Downloading
+/Extracting
+/Fetching
+/Installing
+/Verifying
+
+# Agent tooling caches
+/.codex/
+/.kilo/
+/.opencode/
+/.playwright-mcp/
+/global/
+
+# e2e/browser review screenshots
+/public/screenshots/

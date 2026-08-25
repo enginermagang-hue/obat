@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\ReturObats\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\ReturObats\ReturObatResource;
 use App\Models\DetailReturObat;
 use App\Models\User;
@@ -86,10 +85,7 @@ class ViewReturObat extends ViewRecord implements HasTable
                 ->label('Cetak Faktur')
                 ->color('gray')
                 ->icon(Boxicon::Printer)
-                ->url(fn (): string => CetakPdfPage::getUrl([
-                    'type' => 'faktur-retur',
-                    'id' => $this->record->id,
-                ]))
+                ->url(fn (): string => route('admin.retur.cetak-faktur', ['retur' => $this->record->id]))
                 ->openUrlInNewTab(),
 
             // Submit: draft → menunggu_approval (hanya untuk faskes user)

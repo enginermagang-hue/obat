@@ -49,6 +49,8 @@ class EditPermintaanObat extends EditRecord implements HasSchemas, HasTable
 
     public ?string $targetStatus = null;
 
+    public ?string $alasanPenolakan = null;
+
     public array $details = [];
 
     /**
@@ -411,9 +413,22 @@ class EditPermintaanObat extends EditRecord implements HasSchemas, HasTable
                 ->label('Tolak')
                 ->color('danger')
                 ->icon(Boxicon::XCircle)
-                ->requiresConfirmation()
-                ->action(function () {
+                ->modalHeading('Tolak Permintaan')
+                ->modalSubmitActionLabel('Tolak Permintaan')
+                ->modalWidth(Width::Medium)
+                ->form([
+                    Textarea::make('alasan_penolakan')
+                        ->label('Alasan Penolakan')
+                        ->required()
+                        ->minLength(5)
+                        ->maxLength(1000)
+                        ->rows(4)
+                        ->columnSpanFull()
+                        ->helperText('Wajib diisi - akan dikirim ke pengirim permintaan.'),
+                ])
+                ->action(function (array $data) {
                     $this->targetStatus = 'ditolak';
+                    $this->alasanPenolakan = $data['alasan_penolakan'];
                     $this->customSavedNotificationTitle = 'Permintaan berhasil ditolak';
                     $this->save();
                     $this->notifyPengirim(
@@ -528,6 +543,16 @@ class EditPermintaanObat extends EditRecord implements HasSchemas, HasTable
         if ($this->targetStatus) {
             $data['status'] = $this->targetStatus;
 
+            if ($this->targetStatus === 'disetujui') {
+                $data['tanggal_disetujui'] = now();
+                $data['disetujui_oleh'] = auth()->id();
+            }
+
+            if ($this->targetStatus === 'ditolak') {
+                $data['tanggal_ditolak'] = now();
+                $data['alasan_penolakan'] = $this->alasanPenolakan;
+            }
+
             if ($this->targetStatus === 'diterima') {
                 $data['tanggal_diterima'] = now();
             }
@@ -614,10 +639,7 @@ class EditPermintaanObat extends EditRecord implements HasSchemas, HasTable
 
         $faskes = $permintaan->fasilitasPengirim;
         $kop = PdfSettingsService::getKopSurat($faskes?->id);
-        $layout = PdfSettingsService::getLayout();
-        $googleFontUrl = PdfSettingsService::isGoogleFont($layout['font_family'])
-            ? PdfSettingsService::getGoogleFontImportUrl($layout['font_family'])
-            : null;
+        $layout = PdfSettingsService::DEFAULT_LAYOUT;
 
         $filename = 'surat-permintaan-'.str_replace('/', '_', $permintaan->nomor_permintaan).'.pdf';
 
@@ -626,7 +648,6 @@ class EditPermintaanObat extends EditRecord implements HasSchemas, HasTable
                 'permintaan' => $permintaan,
                 'kop' => $kop,
                 'layout' => $layout,
-                'googleFontUrl' => $googleFontUrl,
             ])
                 ->format('A4')
                 ->base64()

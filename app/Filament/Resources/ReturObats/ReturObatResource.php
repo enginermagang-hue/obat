@@ -39,6 +39,10 @@ class ReturObatResource extends Resource
         $query = parent::getEloquentQuery();
         $user = auth()->user();
 
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
         if ($user->hasRole(['super_admin', 'admin_dinas', 'admin_gudang'])) {
             return $query;
         }

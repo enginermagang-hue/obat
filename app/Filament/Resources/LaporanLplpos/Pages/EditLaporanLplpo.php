@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\LaporanLplpos\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\LaporanLplpos\Concerns\ManagesLplpoDetails;
 use App\Filament\Resources\LaporanLplpos\LaporanLplpoResource;
 use App\Services\LaporanLplpoService;
@@ -121,7 +120,7 @@ class EditLaporanLplpo extends EditRecord implements HasSchemas, HasTable
                 ->label('Cetak PDF')
                 ->icon('heroicon-o-printer')
                 ->color('primary')
-                ->url(fn () => CetakPdfPage::getUrl(['type' => 'lplpo', 'id' => $this->record->id]), shouldOpenInNewTab: true),
+                ->url(fn () => route('admin.lplpo.cetak-pdf', ['lplpo' => $this->record->id]), shouldOpenInNewTab: true),
             Action::make('delete')
                 ->label('Hapus')
                 ->color('danger')

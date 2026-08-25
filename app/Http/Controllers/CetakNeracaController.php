@@ -30,9 +30,8 @@ class CetakNeracaController extends Controller
                 ->distinct();
         })->where('tahun', $neraca->tahun)->orderBy('kode')->get()->values();
 
-        $settings = PdfSettingsService::getSettings($faskes?->id);
         $kop = PdfSettingsService::getKopSurat($faskes?->id);
-        $layout = PdfSettingsService::getLayout();
+        $layout = PdfSettingsService::DEFAULT_LAYOUT;
 
         $filename = "neraca-tahunan-{$neraca->nomor_neraca}-{$neraca->tahun}.pdf";
 
@@ -42,7 +41,6 @@ class CetakNeracaController extends Controller
                 'details' => $details,
                 'sumberDanaList' => $sumberDanaList,
                 'kop' => $kop,
-                'settings' => $settings,
                 'layout' => $layout,
             ])
                 ->format('A4')

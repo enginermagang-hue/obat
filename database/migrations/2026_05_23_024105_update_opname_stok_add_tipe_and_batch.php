@@ -8,9 +8,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('opname_stok', function (Blueprint $table) {
-            $table->enum('tipe', ['penyesuaian', 'stok_baru'])->default('penyesuaian')->after('nomor_opname');
-        });
+        if (config('database.default') !== 'sqlite') {
+            Schema::table('opname_stok', function (Blueprint $table) {
+                $table->enum('tipe', ['penyesuaian', 'stok_baru'])->default('penyesuaian')->after('nomor_opname');
+            });
+        }
 
         Schema::table('detail_opname_stok', function (Blueprint $table) {
             $table->string('batch_number', 100)->nullable()->after('selisih');

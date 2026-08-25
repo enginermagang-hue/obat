@@ -393,8 +393,11 @@ class CreateReturObat extends CreateRecord implements HasSchemas, HasTable
         // Auto-set fasilitas_pengirim_id dari auth user (NULL untuk admin)
         $data['fasilitas_pengirim_id'] = $user?->fasilitas_kesehatan_id;
 
-        // Auto-set fasilitas_penerima_id dari distribusi (jika ada)
-        if (filled($data['distribusi_id'] ?? null)) {
+        // Retur puskesmas menuju gudang tidak memiliki penerima faskes.
+        if ($data['tipe_retur'] === 'puskesmas_ke_gudang') {
+            $data['fasilitas_penerima_id'] = null;
+        } elseif (filled($data['distribusi_id'] ?? null)) {
+            // Untuk retur antar-faskes, penerima mengikuti distribusi terkait.
             $distribusi = DistribusiObat::find($data['distribusi_id']);
             $data['fasilitas_penerima_id'] = $distribusi?->fasilitas_penerima_id;
         }

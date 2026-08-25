@@ -4,11 +4,9 @@ namespace App\Filament\Resources\DistribusiObats\Pages;
 
 use App\Filament\Forms\Components\DateRangeFilter;
 use App\Filament\Forms\Components\SearchInput;
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\DistribusiObats\DistribusiObatResource;
 use App\Models\DistribusiObat;
 use App\Models\FasilitasKesehatan;
-use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -138,11 +136,6 @@ class ListDistribusiObats extends ListRecords implements HasForms
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('export_pdf')
-                ->label('Export PDF')
-                ->icon('heroicon-o-document-text')
-                ->url(fn (): string => CetakPdfPage::getUrl(['type' => 'faktur-distribusi']))
-                ->openUrlInNewTab(),
             CreateAction::make()
                 ->label('Buat Distribusi')
                 ->icon(Boxicon::PlusCircle)

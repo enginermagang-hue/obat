@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\DistribusiObats\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\DistribusiObats\DistribusiObatResource;
 use App\Filament\Resources\PenerimaanStoks\PenerimaanStokResource;
 use App\Filament\Resources\PermintaanObats\PermintaanObatResource;
@@ -174,7 +173,7 @@ class DetailDistribusi extends ViewRecord implements HasTable
                 ->label('Cetak Faktur')
                 ->icon('heroicon-o-printer')
                 ->color('primary')
-                ->url(fn (): string => CetakPdfPage::getUrl(['type' => 'faktur-distribusi', 'id' => $this->record->id]))
+                ->url(fn (): string => route('admin.distribusi.cetak-faktur', ['distribusi' => $this->record->id]))
                 ->openUrlInNewTab()
                 ->visible(fn (): bool => $this->record?->status !== 'draft'),
         ];

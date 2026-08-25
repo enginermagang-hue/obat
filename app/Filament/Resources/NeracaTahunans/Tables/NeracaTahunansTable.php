@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\NeracaTahunans\Tables;
 
-use App\Filament\Pages\CetakPdfPage;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -59,7 +58,7 @@ class NeracaTahunansTable
                     ->icon('heroicon-o-printer')
                     ->color('primary')
                     ->visible(fn ($record) => $record->status === 'selesai')
-                    ->url(fn ($record) => CetakPdfPage::getUrl(['type' => 'neraca', 'id' => $record->id]), shouldOpenInNewTab: true),
+                    ->url(fn ($record) => route('admin.neraca.cetak-pdf', ['neraca' => $record->id]), shouldOpenInNewTab: true),
                 Action::make('export_excel')
                     ->label('Export Excel')
                     ->icon('heroicon-o-arrow-down-tray')

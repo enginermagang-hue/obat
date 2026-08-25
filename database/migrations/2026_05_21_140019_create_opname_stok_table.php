@@ -16,6 +16,9 @@ return new class extends Migration
             $table->string('nomor_opname')->unique();
             $table->foreignId('fasilitas_id')->nullable()->constrained('fasilitas_kesehatan')->nullOnDelete();
             $table->date('tanggal_opname');
+            if (config('database.default') === 'sqlite') {
+                $table->enum('tipe', ['penyesuaian', 'stok_awal', 'stok_baru'])->default('penyesuaian');
+            }
             $table->enum('status', ['draft', 'proses', 'selesai'])->default('draft');
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
             $table->text('catatan')->nullable();

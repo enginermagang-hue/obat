@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\BatchStok;
 use App\Models\DetailDistribusiObat;
+use App\Models\DetailPemakaianObat;
 use App\Models\DetailPenerimaanStok;
 use App\Models\DetailReturObat;
 use App\Models\DistribusiObat;
@@ -230,6 +231,14 @@ class StokService
                     jumlah: $selisih,
                     tanggalMasuk: $opname->tanggal_opname,
                 );
+            } elseif ($selisih < 0 && $detail->batch_number && $detail->tanggal_expired) {
+                $this->kurangiBatch(
+                    obatId: $detail->obat_id,
+                    batchNumber: $detail->batch_number,
+                    tanggalExpired: $detail->tanggal_expired,
+                    fasilitasId: $opname->fasilitas_id,
+                    jumlah: abs($selisih),
+                );
             }
 
             $this->catatRiwayat(
@@ -346,6 +355,13 @@ class StokService
      */
     public function prosesPemakaian(PemakaianObat $pemakaian): void
     {
+        DB::transaction(function () use ($pemakaian): void {
+            $this->prosesPemakaianDalamTransaksi($pemakaian);
+        });
+    }
+
+    private function prosesPemakaianDalamTransaksi(PemakaianObat $pemakaian): void
+    {
         $fasilitasId = $pemakaian->fasilitas_id;
 
         // Pastikan details sudah ter-load (avoid lazy-load N+1)
@@ -353,23 +369,20 @@ class StokService
             ? $pemakaian->details
             : $pemakaian->details()->get();
 
+        $batches = $this->lockAndValidateBatchPemakaian($pemakaian, $details, $fasilitasId);
+
         foreach ($details as $detail) {
             // 1. Kurangi stok agregat (per-obat, per-detail)
             $stok = $this->getStokTarget($fasilitasId, $detail->obat_id);
             $stokSebelum = $stok->jumlah;
             $stok->decrement('jumlah', $detail->jumlah);
 
-            // 2. Kurangi batch_stok jika ada batch_id
-            if ($detail->batch_id) {
-                $batch = BatchStok::find($detail->batch_id);
+            // 2. Kurangi batch_stok yang telah divalidasi dan dikunci.
+            $batch = $batches->get($detail->batch_id);
+            $batch->decrement('jumlah', $detail->jumlah);
 
-                if ($batch && $batch->jumlah >= $detail->jumlah) {
-                    $batch->decrement('jumlah', $detail->jumlah);
-
-                    if ($batch->jumlah <= 0) {
-                        $batch->update(['status' => 'dimusnahkan']);
-                    }
-                }
+            if ($batch->jumlah <= 0) {
+                $batch->update(['status' => 'dimusnahkan']);
             }
 
             // 3. Catat RiwayatStok tipe 'keluar' (1 row per detail, polymorphic ref ke detail)
@@ -403,6 +416,13 @@ class StokService
      */
     public function reversePemakaian(PemakaianObat $pemakaian): void
     {
+        DB::transaction(function () use ($pemakaian): void {
+            $this->reversePemakaianDalamTransaksi($pemakaian);
+        });
+    }
+
+    private function reversePemakaianDalamTransaksi(PemakaianObat $pemakaian): void
+    {
         $fasilitasId = $pemakaian->fasilitas_id;
 
         // Pastikan details sudah ter-load (avoid lazy-load N+1)
@@ -418,7 +438,9 @@ class StokService
 
             // 2. Tambah kembali batch_stok jika ada batch_id
             if ($detail->batch_id) {
-                $batch = BatchStok::find($detail->batch_id);
+                $batch = BatchStok::query()
+                    ->lockForUpdate()
+                    ->find($detail->batch_id);
 
                 if ($batch) {
                     $batch->increment('jumlah', $detail->jumlah);
@@ -450,6 +472,58 @@ class StokService
                 BatchStok::recalculateGudang($detail->obat_id);
             }
         }
+    }
+
+    /**
+     * @param  Collection<int, DetailPemakaianObat>  $details
+     * @return Collection<int, BatchStok>
+     */
+    private function lockAndValidateBatchPemakaian(
+        PemakaianObat $pemakaian,
+        Collection $details,
+        ?int $fasilitasId,
+    ): Collection {
+        $batchIds = $details->pluck('batch_id')->filter()->unique()->values();
+
+        if ($batchIds->count() !== $details->count()) {
+            throw new \RuntimeException('Setiap detail pemakaian harus memiliki batch stok.');
+        }
+
+        $batches = BatchStok::query()
+            ->whereKey($batchIds)
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
+        $jumlahPerBatch = $details->groupBy('batch_id')->map->sum('jumlah');
+
+        foreach ($details as $detail) {
+            $batch = $batches->get($detail->batch_id);
+
+            if (! $batch) {
+                throw new \RuntimeException("Batch stok ID {$detail->batch_id} tidak ditemukan untuk pemakaian {$pemakaian->nomor_pemakaian}.");
+            }
+
+            if (
+                $batch->status !== 'tersedia'
+                || $batch->obat_id !== $detail->obat_id
+                || $batch->fasilitas_id !== $fasilitasId
+            ) {
+                throw new \RuntimeException("Batch stok {$batch->batch_number} tidak sesuai dengan detail pemakaian.");
+            }
+        }
+
+        foreach ($jumlahPerBatch as $batchId => $jumlah) {
+            $batch = $batches->get($batchId);
+
+            if ($batch->jumlah < $jumlah) {
+                throw new \RuntimeException(
+                    "Stok batch {$batch->batch_number} tidak mencukupi (tersisa {$batch->jumlah}, diminta {$jumlah}).",
+                );
+            }
+        }
+
+        return $batches;
     }
 
     /**
@@ -653,7 +727,12 @@ class StokService
                     ],
                 );
 
-                $stokSebelum = $targetBatch->jumlah;
+                $stokSebelum = (int) $targetBatch->jumlah;
+
+                if (! $targetBatch->exists) {
+                    $targetBatch->save();
+                }
+
                 $targetBatch->increment('jumlah', $jumlah);
 
                 // Catat riwayat stok batch
@@ -806,12 +885,12 @@ class StokService
         ?int $fasilitasId,
         int $jumlah,
     ): void {
-        $batch = BatchStok::where([
-            'obat_id' => $obatId,
-            'batch_number' => $batchNumber,
-            'tanggal_expired' => $tanggalExpired,
-            'fasilitas_id' => $fasilitasId,
-        ])->first();
+        $batch = BatchStok::query()
+            ->where('obat_id', $obatId)
+            ->where('batch_number', $batchNumber)
+            ->whereDate('tanggal_expired', $tanggalExpired)
+            ->where('fasilitas_id', $fasilitasId)
+            ->first();
 
         $batch?->decrement('jumlah', $jumlah);
     }

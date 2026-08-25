@@ -4,8 +4,11 @@ namespace App\Services;
 
 use App\Models\BatchStok;
 use App\Models\DetailNeracaTahunan;
+use App\Models\DetailPemakaianObat;
+use App\Models\DistribusiObat;
 use App\Models\NeracaTahunan;
 use App\Models\Obat;
+use App\Models\PenerimaanStok;
 use App\Models\RiwayatStok;
 use App\Models\StokFaskes;
 use App\Models\StokGudang;
@@ -65,33 +68,114 @@ class NeracaTahunanService extends LaporanBaseService
 
                 $detail = DetailNeracaTahunan::create($detailData);
 
-                // Calculate and store per-sumber-dana breakdown
-                $sumberDanaData = $this->calculatePerSumberDana(
-                    obatId: $obatId,
-                    fasilitasId: $fasilitasId,
-                    tahun: $tahun,
-                    hargaSatuan: $obatMap->get($obatId),
-                );
-
-                if (filled($sumberDanaData)) {
-                    foreach ($sumberDanaData as $sdData) {
-                        $detail->sumberDanaDetails()->create($sdData);
-                    }
-                } else {
-                    $detail->sumberDanaDetails()->create([
-                        'sumber_dana_id' => null,
-                        'stok_awal_jumlah' => $detailData['stok_awal'] ?? 0,
-                        'stok_awal_nilai' => ($detailData['stok_awal'] ?? 0) * ($detailData['harga_satuan'] ?? 0),
-                        'masuk_jumlah' => $detailData['total_masuk'] ?? 0,
-                        'masuk_nilai' => ($detailData['total_masuk'] ?? 0) * ($detailData['harga_satuan'] ?? 0),
-                        'keluar_jumlah' => $detailData['total_keluar'] ?? 0,
-                        'keluar_nilai' => ($detailData['total_keluar'] ?? 0) * ($detailData['harga_satuan'] ?? 0),
-                        'stok_akhir_jumlah' => $detailData['stok_akhir'] ?? 0,
-                        'stok_akhir_nilai' => ($detailData['stok_akhir'] ?? 0) * ($detailData['harga_satuan'] ?? 0),
-                    ]);
-                }
+                $this->syncSumberDanaBreakdown($detail);
             }
         });
+    }
+
+    /**
+     * Build the preview rows (the Filament trait's $details shape) from stock
+     * history without persisting anything. Used by the create/edit forms.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function buildDetails(?int $fasilitasId, int $tahun): array
+    {
+        $obatIdsFromRiwayat = $this->getObatIdsFromRiwayat(
+            RiwayatStok::query()->when(
+                is_null($fasilitasId),
+                fn ($q) => $q->whereNull('fasilitas_id'),
+                fn ($q) => $q->where('fasilitas_id', $fasilitasId),
+            ),
+            $tahun,
+        );
+
+        $obatIdsFromStok = is_null($fasilitasId)
+            ? StokGudang::where('jumlah', '>', 0)->pluck('obat_id')
+            : StokFaskes::where('fasilitas_id', $fasilitasId)
+                ->where('jumlah', '>', 0)
+                ->pluck('obat_id');
+
+        $obatIds = $obatIdsFromRiwayat
+            ->merge($obatIdsFromStok)
+            ->unique()
+            ->values();
+
+        if ($obatIds->isEmpty()) {
+            return [];
+        }
+
+        $obatMap = Obat::whereIn('id', $obatIds)
+            ->pluck('harga_satuan', 'id');
+
+        $obatNames = Obat::whereIn('id', $obatIds)
+            ->pluck('nama_obat', 'id');
+
+        $rows = [];
+
+        foreach ($obatIds as $index => $obatId) {
+            $fields = $this->calculateDetailFields(
+                obatId: $obatId,
+                fasilitasId: $fasilitasId,
+                tahun: $tahun,
+                hargaSatuan: $obatMap->get($obatId),
+            );
+
+            $hargaSatuan = (float) ($fields['harga_satuan'] ?? 0);
+            unset($fields['obat_id']);
+
+            $rows[] = array_merge([
+                '_key' => $index,
+                'id' => null,
+            ], $fields, [
+                'obat_id' => $obatId,
+                'obat_name' => $obatNames->get($obatId, ''),
+                'harga_satuan' => $hargaSatuan,
+                'nilai_stok' => (float) $fields['stok_akhir'] * $hargaSatuan,
+                'keterangan' => null,
+            ]);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Recompute and persist the per-sumber-dana breakdown for one saved
+     * DetailNeracaTahunan. Falls back to a single null-SD row aggregating the
+     * detail totals so PDF/Excel still render when no funding data exists.
+     */
+    public function syncSumberDanaBreakdown(DetailNeracaTahunan $detail): void
+    {
+        $neraca = $detail->neracaTahunan;
+
+        $sumberDanaData = $this->calculatePerSumberDana(
+            obatId: $detail->obat_id,
+            fasilitasId: $neraca->fasilitas_id,
+            tahun: $neraca->tahun,
+            hargaSatuan: (float) ($detail->harga_satuan ?? 0),
+        );
+
+        $detail->sumberDanaDetails()->delete();
+
+        if (filled($sumberDanaData)) {
+            foreach ($sumberDanaData as $sdData) {
+                $detail->sumberDanaDetails()->create($sdData);
+            }
+
+            return;
+        }
+
+        $detail->sumberDanaDetails()->create([
+            'sumber_dana_id' => null,
+            'stok_awal_jumlah' => $detail->stok_awal ?? 0,
+            'stok_awal_nilai' => ($detail->stok_awal ?? 0) * ($detail->harga_satuan ?? 0),
+            'masuk_jumlah' => $detail->total_masuk ?? 0,
+            'masuk_nilai' => ($detail->total_masuk ?? 0) * ($detail->harga_satuan ?? 0),
+            'keluar_jumlah' => $detail->total_keluar ?? 0,
+            'keluar_nilai' => ($detail->total_keluar ?? 0) * ($detail->harga_satuan ?? 0),
+            'stok_akhir_jumlah' => $detail->stok_akhir ?? 0,
+            'stok_akhir_nilai' => ($detail->stok_akhir ?? 0) * ($detail->harga_satuan ?? 0),
+        ]);
     }
 
     protected function queryRiwayatStok(
@@ -117,6 +201,25 @@ class NeracaTahunanService extends LaporanBaseService
 
     private function calculateDetail(
         int $neracaId,
+        int $obatId,
+        ?int $fasilitasId,
+        int $tahun,
+        ?float $hargaSatuan,
+    ): array {
+        return array_merge(
+            ['neraca_id' => $neracaId],
+            $this->calculateDetailFields($obatId, $fasilitasId, $tahun, $hargaSatuan),
+            ['created_at' => now(), 'updated_at' => now()],
+        );
+    }
+
+    /**
+     * Compute the per-obat balance fields for one obat
+     * (without neraca_id / timestamps).
+     *
+     * @return array<string, mixed>
+     */
+    private function calculateDetailFields(
         int $obatId,
         ?int $fasilitasId,
         int $tahun,
@@ -164,7 +267,6 @@ class NeracaTahunanService extends LaporanBaseService
         $permintaan = $this->hitungPermintaan($totalKeluar, $stokAkhir, 12);
 
         return [
-            'neraca_id' => $neracaId,
             'obat_id' => $obatId,
             'stok_awal' => $stokAwal,
             'total_masuk' => $totalMasuk,
@@ -174,8 +276,6 @@ class NeracaTahunanService extends LaporanBaseService
             'permintaan' => $permintaan,
             'harga_satuan' => $hargaSatuan,
             'nilai_stok' => $nilaiStok,
-            'created_at' => now(),
-            'updated_at' => now(),
         ];
     }
 
@@ -210,8 +310,8 @@ class NeracaTahunanService extends LaporanBaseService
         // SD IDs from penerimaan (masuk) in this year
         $penerimaanSdIds = DB::table('riwayat_stok as rs')
             ->join('penerimaan_stok as ps', function ($join) {
-                $join->on('rs.referensi_type', '=', DB::raw("'App\\\\Models\\\\PenerimaanStok'"))
-                    ->on('rs.referensi_id', '=', 'ps.id');
+                $join->on('rs.referensi_id', '=', 'ps.id')
+                    ->where('rs.referensi_type', PenerimaanStok::class);
             })
             ->where('rs.obat_id', $obatId)
             ->whereYear('rs.tanggal', $tahun)
@@ -224,8 +324,8 @@ class NeracaTahunanService extends LaporanBaseService
         // SD IDs from distribusi (masuk & keluar) in this year via batch
         $distribusiSdIds = DB::table('riwayat_stok as rs')
             ->join('detail_distribusi_obat as ddo', function ($join) use ($obatId) {
-                $join->on('rs.referensi_type', '=', DB::raw("'App\\\\Models\\\\DistribusiObat'"))
-                    ->on('rs.referensi_id', '=', 'ddo.distribusi_id')
+                $join->on('rs.referensi_id', '=', 'ddo.distribusi_id')
+                    ->where('rs.referensi_type', DistribusiObat::class)
                     ->where('ddo.obat_id', $obatId);
             })
             ->join('batch_stok as bs', 'ddo.batch_id', '=', 'bs.id')
@@ -239,8 +339,8 @@ class NeracaTahunanService extends LaporanBaseService
         // SD IDs from pemakaian (keluar) in this year via batch
         $pemakaianSdIds = DB::table('riwayat_stok as rs')
             ->join('detail_pemakaian_obat as dpo', function ($join) {
-                $join->on('rs.referensi_type', '=', DB::raw("'App\\\\Models\\\\DetailPemakaianObat'"))
-                    ->on('rs.referensi_id', '=', 'dpo.id');
+                $join->on('rs.referensi_id', '=', 'dpo.id')
+                    ->where('rs.referensi_type', DetailPemakaianObat::class);
             })
             ->join('batch_stok as bs', 'dpo.batch_id', '=', 'bs.id')
             ->where('rs.obat_id', $obatId)
@@ -279,8 +379,8 @@ class NeracaTahunanService extends LaporanBaseService
             // Masuk (penerimaan langsung) per sumber dana
             $masukPenerimaan = DB::table('riwayat_stok as rs')
                 ->join('penerimaan_stok as ps', function ($join) {
-                    $join->on('rs.referensi_type', '=', DB::raw("'App\\\\Models\\\\PenerimaanStok'"))
-                        ->on('rs.referensi_id', '=', 'ps.id');
+                    $join->on('rs.referensi_id', '=', 'ps.id')
+                        ->where('rs.referensi_type', PenerimaanStok::class);
                 })
                 ->where('rs.obat_id', $obatId)
                 ->where('ps.sumber_dana_id', $sd->id)
@@ -292,8 +392,8 @@ class NeracaTahunanService extends LaporanBaseService
             // Masuk (distribusi masuk ke faskes) per sumber dana via batch
             $masukDistribusi = DB::table('riwayat_stok as rs')
                 ->join('detail_distribusi_obat as ddo', function ($join) use ($obatId) {
-                    $join->on('rs.referensi_type', '=', DB::raw("'App\\\\Models\\\\DistribusiObat'"))
-                        ->on('rs.referensi_id', '=', 'ddo.distribusi_id')
+                    $join->on('rs.referensi_id', '=', 'ddo.distribusi_id')
+                        ->where('rs.referensi_type', DistribusiObat::class)
                         ->where('ddo.obat_id', $obatId);
                 })
                 ->join('batch_stok as bs', 'ddo.batch_id', '=', 'bs.id')
@@ -309,8 +409,8 @@ class NeracaTahunanService extends LaporanBaseService
             // Keluar (pemakaian) per sumber dana via batch_id
             $keluarJumlah = DB::table('riwayat_stok as rs')
                 ->join('detail_pemakaian_obat as dpo', function ($join) {
-                    $join->on('rs.referensi_type', '=', DB::raw("'App\\\\Models\\\\DetailPemakaianObat'"))
-                        ->on('rs.referensi_id', '=', 'dpo.id');
+                    $join->on('rs.referensi_id', '=', 'dpo.id')
+                        ->where('rs.referensi_type', DetailPemakaianObat::class);
                 })
                 ->join('batch_stok as bs', 'dpo.batch_id', '=', 'bs.id')
                 ->where('rs.obat_id', $obatId)
@@ -323,8 +423,8 @@ class NeracaTahunanService extends LaporanBaseService
             // Distribusi keluar per sumber dana
             $distribusiKeluarJumlah = DB::table('riwayat_stok as rs')
                 ->join('detail_distribusi_obat as ddo', function ($join) use ($obatId) {
-                    $join->on('rs.referensi_type', '=', DB::raw("'App\\\\Models\\\\DistribusiObat'"))
-                        ->on('rs.referensi_id', '=', 'ddo.distribusi_id')
+                    $join->on('rs.referensi_id', '=', 'ddo.distribusi_id')
+                        ->where('rs.referensi_type', DistribusiObat::class)
                         ->where('ddo.obat_id', $obatId);
                 })
                 ->join('batch_stok as bs', 'ddo.batch_id', '=', 'bs.id')

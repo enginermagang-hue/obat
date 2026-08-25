@@ -231,9 +231,13 @@ class PredictionService
     {
         $startDate = now()->subMonths(self::WINDOW_MONTHS)->startOfMonth();
 
+        $bulanExpression = DB::connection()->getDriverName() === 'sqlite'
+            ? "strftime('%Y-%m', p.tanggal_pemakaian)"
+            : "DATE_FORMAT(p.tanggal_pemakaian, '%Y-%m')";
+
         $records = DB::table('detail_pemakaian_obat as d')
             ->join('pemakaian_obat as p', 'p.id', '=', 'd.pemakaian_id')
-            ->selectRaw("DATE_FORMAT(p.tanggal_pemakaian, '%Y-%m') as bulan, SUM(d.jumlah) as total")
+            ->selectRaw("{$bulanExpression} as bulan, SUM(d.jumlah) as total")
             ->where('p.fasilitas_id', $fasilitasId)
             ->where('d.obat_id', $obatId)
             ->where('p.tanggal_pemakaian', '>=', $startDate)

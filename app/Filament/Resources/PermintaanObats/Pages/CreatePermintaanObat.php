@@ -120,7 +120,7 @@ class CreatePermintaanObat extends CreateRecord implements HasSchemas, HasTable
             Select::make('obat_id')
                 ->label('Obat')
                 ->required()
-                ->searchable()
+                // ->searchable()
                 ->live(onBlur: true)
                 ->options(fn (): array => $this->getAvailableObatOptions())
                 ->helperText(function (Get $get): string {
@@ -446,10 +446,7 @@ class CreatePermintaanObat extends CreateRecord implements HasSchemas, HasTable
 
         $faskes = $permintaan->fasilitasPengirim;
         $kop = PdfSettingsService::getKopSurat($faskes?->id);
-        $layout = PdfSettingsService::getLayout();
-        $googleFontUrl = PdfSettingsService::isGoogleFont($layout['font_family'])
-            ? PdfSettingsService::getGoogleFontImportUrl($layout['font_family'])
-            : null;
+        $layout = PdfSettingsService::DEFAULT_LAYOUT;
 
         $filename = 'surat-permintaan-'.str_replace('/', '_', $permintaan->nomor_permintaan).'.pdf';
 
@@ -458,7 +455,6 @@ class CreatePermintaanObat extends CreateRecord implements HasSchemas, HasTable
                 'permintaan' => $permintaan,
                 'kop' => $kop,
                 'layout' => $layout,
-                'googleFontUrl' => $googleFontUrl,
             ])
                 ->format('A4')
                 ->base64()

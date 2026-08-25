@@ -290,10 +290,10 @@ class PenerimaanStokForm
                                     ->label('Distribusi Obat')
                                     ->helperText('Pilih distribusi yang sedang dalam pengiriman ke faskes Anda.')
                                     ->placeholder('Pilih distribusi...')
-                                    ->searchable()
+                                    // ->searchable()
                                     ->preload()
                                     ->live()
-                                    ->native(false)
+                                    // ->native(false)
                                     ->relationship(
                                         'distribusi',
                                         'nomor_surat_jalan',
@@ -309,7 +309,7 @@ class PenerimaanStokForm
                                 Select::make('supplier_id')
                                     ->label('Supplier')
                                     ->options(Supplier::query()->where('status', 'aktif')->pluck('nama', 'id'))
-                                    ->searchable()
+                                    // ->searchable()
                                     ->nullable()
                                     ->hidden(fn (Get $get): bool => $get('tipe') !== 'pembelian')
                                     ->createOptionForm([
@@ -346,7 +346,7 @@ class PenerimaanStokForm
                                 Select::make('sumber_dana_id')
                                     ->label('Sumber Dana')
                                     ->options(SumberDana::query()->where('status', 'aktif')->pluck('nama', 'id'))
-                                    ->searchable()
+                                    // ->searchable()
                                     ->preload()
                                     ->nullable()
                                     ->hidden(fn (Get $get): bool => ! in_array($get('tipe'), ['pembelian', 'manual'], true)),
@@ -399,7 +399,7 @@ class PenerimaanStokForm
                                     Select::make('obat_id')
                                         ->label('Obat')
                                         ->required()
-                                        ->searchable()
+                                        // ->searchable()
                                         ->live(onBlur: true)
                                         ->options(fn (): array => Obat::orderBy('nama_obat')->pluck('nama_obat', 'id')->toArray())
                                         ->afterStateUpdated(function ($state, Set $set, Get $get) {

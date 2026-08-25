@@ -4,7 +4,6 @@ namespace App\Filament\Resources\PermintaanObats\Pages;
 
 use App\Filament\Forms\Components\DateRangeFilter;
 use App\Filament\Forms\Components\SearchInput;
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\PermintaanObats\PermintaanObatResource;
 use App\Models\PermintaanObat;
 use Filament\Actions\Action;
@@ -101,11 +100,6 @@ class ListPermintaanObats extends ListRecords implements HasForms
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('export_pdf')
-                ->label('Export PDF')
-                ->icon('heroicon-o-document-text')
-                ->url(fn (): string => CetakPdfPage::getUrl(['type' => 'faktur-permintaan']))
-                ->openUrlInNewTab(),
             Action::make('export_excel')
                 ->label('Export Excel')
                 ->icon('heroicon-o-table-cells')

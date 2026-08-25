@@ -7,7 +7,7 @@ use Filament\Tables\Table;
 
 class RiwayatStoksTable
 {
-    public static function configure(Table $table): Table
+    public static function configure(Table $table, array $hideColumns = []): Table
     {
         return $table
             ->columns([
@@ -16,15 +16,18 @@ class RiwayatStoksTable
                     ->date('d/m/Y'),
                 TextColumn::make('obat.kode_obat')
                     ->label('Kode Obat')
-                    ->searchable(),
+                    ->searchable()
+                    ->hidden(in_array('obat.kode_obat', $hideColumns, true)),
                 TextColumn::make('obat.nama_obat')
                     ->label('Nama Obat')
-                    ->searchable(),
+                    ->searchable()
+                    ->hidden(in_array('obat.nama_obat', $hideColumns, true)),
                 TextColumn::make('fasilitas.nama')
                     ->label('Fasilitas')
                     ->searchable()
                     ->toggleable()
-                    ->visible(fn (): bool => ! auth()->user()->hasAnyRole(['puskesmas', 'pustu'])),
+                    ->visible(fn (): bool => ! in_array('fasilitas.nama', $hideColumns, true)
+                        && ! auth()->user()->hasAnyRole(['puskesmas', 'pustu'])),
                 TextColumn::make('tipe')
                     ->label('Tipe')
                     ->badge()
@@ -58,7 +61,7 @@ class RiwayatStoksTable
                     ->formatStateUsing(fn ($record): string => self::getReferensiLabel($record))
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->defaultSort('created_at', 'desc')
+            ->defaultSort('tanggal', 'desc')
             ->filters([])
             ->recordActions([]);
     }

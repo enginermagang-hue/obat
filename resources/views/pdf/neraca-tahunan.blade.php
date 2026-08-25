@@ -13,7 +13,7 @@
     ]])
 
     @if($sumberDanaList->count() > 0)
-    <div style="font-size: {{ $pdfItemsSize }}pt; margin-bottom: 8px;">
+    <div style="font-size: {{ $itemsSize }}pt; margin-bottom: 8px;">
         <strong>Sumber Dana:</strong>
         @foreach($sumberDanaList as $sd)
             {{ $sd->kode }}@if(!$loop->last), @endif
@@ -46,7 +46,7 @@
             @php $no = 1; @endphp
             @foreach($grouped as $kategori => $items)
             <tr>
-                <td colspan="{{ $totalCols }}" style="background-color: #FFFF00; font-weight: bold; font-size: {{ $pdfItemsSize }}pt;">
+                <td colspan="{{ $totalCols }}" style="background-color: #FFFF00; font-weight: bold; font-size: {{ $itemsSize }}pt;">
                     {{ strtoupper($kategori) }}
                 </td>
             </tr>

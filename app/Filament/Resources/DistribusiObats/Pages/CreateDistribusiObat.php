@@ -459,7 +459,10 @@ class CreateDistribusiObat extends CreateRecord implements HasSchemas, HasTable
                 }
 
                 if ($record->permintaan) {
-                    $record->permintaan->update(['status' => 'sedang_didistribusi']);
+                    $record->permintaan->update([
+                        'status' => 'sedang_didistribusi',
+                        'tanggal_dikirim' => $this->isKirim ? now() : $record->permintaan->tanggal_dikirim,
+                    ]);
                 }
 
                 if ($this->isKirim) {

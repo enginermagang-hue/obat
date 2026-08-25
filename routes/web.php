@@ -1,26 +1,23 @@
 <?php
 
 use App\Http\Controllers\CetakFakturController;
+use App\Http\Controllers\CetakFakturPenerimaanController;
+use App\Http\Controllers\CetakFakturReturController;
 use App\Http\Controllers\CetakLplpoController;
 use App\Http\Controllers\CetakNeracaController;
 use App\Http\Controllers\CetakObatExcelController;
 use App\Http\Controllers\CetakPermintaanController;
 use App\Http\Controllers\CetakPermintaanExcelController;
-use App\Http\Controllers\CetakPreviewController;
 use App\Http\Controllers\CetakRkoController;
 use App\Http\Controllers\CustomAuthController;
 use App\Http\Controllers\DownloadSuratPermintaanController;
 use App\Http\Controllers\GoogleSocialiteController;
 use App\Http\Controllers\PanduanController;
-use App\Http\Controllers\SetupWizardController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
 });
-
-Route::get('/setup-wizard', [SetupWizardController::class, 'show'])->name('setup-wizard.show');
-Route::post('/setup-wizard', [SetupWizardController::class, 'store'])->name('setup-wizard.store');
 
 Route::get('/panduan', [PanduanController::class, 'index'])->name('panduan.index');
 Route::get('/panduan/{slug}', [PanduanController::class, 'show'])->name('panduan.show');
@@ -38,13 +35,16 @@ Route::middleware('web')->group(function () {
         ->name('logout')
         ->middleware('auth');
 
-    Route::get('/admin/cetak-preview/{type}/{id}', CetakPreviewController::class)
-        ->whereNumber('id')
-        ->name('admin.cetak-preview')
-        ->middleware('auth');
-
     Route::get('/admin/distribusi/{distribusi}/cetak-faktur', CetakFakturController::class)
         ->name('admin.distribusi.cetak-faktur')
+        ->middleware('auth');
+
+    Route::get('/admin/penerimaan/{penerimaan}/cetak-faktur', CetakFakturPenerimaanController::class)
+        ->name('admin.penerimaan.cetak-faktur')
+        ->middleware('auth');
+
+    Route::get('/admin/retur/{retur}/cetak-faktur', CetakFakturReturController::class)
+        ->name('admin.retur.cetak-faktur')
         ->middleware('auth');
 
     Route::get('/admin/neraca/{neraca}/cetak-pdf', [CetakNeracaController::class, 'cetakPdf'])

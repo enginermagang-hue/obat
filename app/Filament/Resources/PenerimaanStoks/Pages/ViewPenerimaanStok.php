@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\PenerimaanStoks\Pages;
 
-use App\Filament\Pages\CetakPdfPage;
 use App\Filament\Resources\DistribusiObats\DistribusiObatResource;
 use App\Filament\Resources\PenerimaanStoks\PenerimaanStokResource;
 use App\Models\DetailPenerimaanStok;
@@ -77,10 +76,7 @@ class ViewPenerimaanStok extends ViewRecord implements HasTable
                 ->label('Cetak Faktur')
                 ->color('gray')
                 ->icon(Boxicon::Printer)
-                ->url(fn (): string => CetakPdfPage::getUrl([
-                    'type' => 'faktur-penerimaan',
-                    'id' => $this->record->id,
-                ]))
+                ->url(fn (): string => route('admin.penerimaan.cetak-faktur', ['penerimaan' => $this->record->id]))
                 ->openUrlInNewTab(),
         ];
     }

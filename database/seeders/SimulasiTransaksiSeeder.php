@@ -20,7 +20,6 @@ use App\Models\PenerimaanStok;
 use App\Models\PermintaanObat;
 use App\Models\ReturObat;
 use App\Models\RiwayatStok;
-use App\Models\SetupConfiguration;
 use App\Models\StokFaskes;
 use App\Models\StokGudang;
 use App\Models\SumberDana;
@@ -181,8 +180,6 @@ class SimulasiTransaksiSeeder extends Seeder
             StokGudangSeeder::class,
             AvatarPresetSeeder::class,
         ]);
-
-        $this->completeSetupWizard();
 
         $config = $this->promptUserConfig();
 
@@ -421,32 +418,6 @@ class SimulasiTransaksiSeeder extends Seeder
         }
     }
 
-    private function completeSetupWizard(): void
-    {
-        $config = SetupConfiguration::firstOrCreate(
-            [],
-            [
-                'is_setup_completed' => true,
-                'organization_name' => 'Dinas Kesehatan (Simulasi)',
-                'organization_code' => 'DINKES-SIM',
-                'organization_description' => 'Setup otomatis oleh SimulasiTransaksiSeeder',
-                'superadmin_email' => 'superadmin@mail.com',
-                'superadmin_name' => 'Super Admin',
-                'pdf_header' => "PEMERINTAH KABUPATEN/KOTA\nDINAS KESEHATAN",
-                'pdf_footer' => 'Dokumen ini dicetak secara otomatis oleh Sistem Informasi Manajemen Obat',
-                'document_number_format' => 'INV-{YYYY}{MM}{DD}-{SEQ}',
-                'document_number_sequence' => 0,
-                'setup_completed_at' => now(),
-            ],
-        );
-
-        if (! $config->is_setup_completed) {
-            $config->markSetupCompleted();
-        }
-
-        $this->command?->info('  ✓ Setup wizard ditandai selesai');
-    }
-
     private function initStockTracking(): void
     {
         // Load initial gudang stock
@@ -498,21 +469,23 @@ class SimulasiTransaksiSeeder extends Seeder
     {
         $seasonMul = $this->getSeasonMultiplier($date);
 
-        // Snapshot facility stock at the start of this month (used by LPLPO for stok_awal)
-        $this->snapshotFaskesStock();
-
         // 0. For first 2 months, seed initial stock to faskes (so pemakaian has stock)
         if ($monthIndex < 2) {
             $this->distributeInitialStock($date);
         }
+
+        // Snapshot facility stock at the start of this month (used by LPLPO for stok_awal).
+        // Taken AFTER initial distribution so LPLPO of months 0-1 has an accurate stok_awal.
+        $this->snapshotFaskesStock();
 
         // 1. Penerimaan Stok di Gudang (2-4 kali per bulan)
         if (in_array('penerimaan', $modules)) {
             $this->generatePenerimaanGudang($date);
         }
 
-        // 2. Distribusi Obat (before pemakaian so faskes have stock)
-        if (in_array('distribusi', $modules)) {
+        // 2. Distribusi Obat (before pemakaian so faskes have stock).
+        // Skipped in the first 2 months because distributeInitialStock already seeded stock.
+        if (in_array('distribusi', $modules) && $monthIndex >= 2) {
             $this->generateAllDistribusi($date);
         }
 
@@ -855,25 +828,34 @@ class SimulasiTransaksiSeeder extends Seeder
             return null;
         }
 
-        // Pick from batch with enough stock
+        // FIFO: oldest batches first
+        usort($batches, fn ($a, $b) => $a['batch_id'] <=> $b['batch_id']);
+
+        // Consume the requested quantity across batches until satisfied
+        $remaining = $jumlah;
+        $lastBatchId = null;
+
         foreach ($batches as &$batch) {
-            if ($batch['jumlah'] >= $jumlah) {
-                $batch['jumlah'] -= $jumlah;
-
-                return ['batch_id' => $batch['batch_id'], 'sisa' => $batch['jumlah']];
+            if ($remaining <= 0) {
+                break;
             }
+            $take = min($batch['jumlah'], $remaining);
+            $batch['jumlah'] -= $take;
+            $remaining -= $take;
+            $lastBatchId = $batch['batch_id'];
         }
 
-        // If no single batch has enough, take from the largest
-        usort($batches, fn ($a, $b) => $b['jumlah'] <=> $a['jumlah']);
-        if ($batches[0]['jumlah'] > 0) {
-            $taken = min($batches[0]['jumlah'], $jumlah);
-            $batches[0]['jumlah'] -= $taken;
-
-            return ['batch_id' => $batches[0]['batch_id'], 'sisa' => $batches[0]['jumlah']];
+        // If we could not fulfil the full quantity, restore batches and bail out
+        // (do not record a phantom deduction — faskesStock stays untouched on null).
+        if ($remaining > 0 || $lastBatchId === null) {
+            return null;
         }
 
-        return null;
+        // Remove exhausted batches and persist the tracking array only on success
+        $batches = array_values(array_filter($batches, fn ($b) => $b['jumlah'] > 0));
+        $this->batchByFaskes[$fasilitasId][$obatId] = $batches;
+
+        return ['batch_id' => $lastBatchId, 'sisa' => $remaining];
     }
 
     private function randomDiagnosa(): string
@@ -1269,8 +1251,8 @@ class SimulasiTransaksiSeeder extends Seeder
             return null;
         }
 
-        // Sort: newest batches first (FIFO approach)
-        usort($batches, fn ($a, $b) => $b['batch_id'] <=> $a['batch_id']);
+        // Sort: oldest batches first (FIFO approach)
+        usort($batches, fn ($a, $b) => $a['batch_id'] <=> $b['batch_id']);
 
         $remaining = $jumlah;
         $lastBatchId = null;
