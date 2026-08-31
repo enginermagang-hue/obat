@@ -47,7 +47,18 @@ class PrediksiKebutuhansTable
                         'manual' => 'gray',
                         default => 'secondary',
                     })
+                    ->description(fn ($record): ?string => $record->metode === 'moving_average' ? 'Data < 6 bulan — fallback' : null)
                     ->sortable(),
+                TextColumn::make('model.tanggal_training')
+                    ->label('Tgl Training')
+                    ->date('d/m/Y')
+                    ->sortable()
+                    ->toggleable(),
+                TextColumn::make('created_at')
+                    ->label('Dibuat')
+                    ->dateTime('d/m/Y H:i')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('metode')

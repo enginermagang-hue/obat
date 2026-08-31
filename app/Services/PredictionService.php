@@ -234,7 +234,16 @@ class PredictionService
      */
     public function getMonthlyUsage(int $fasilitasId, int $obatId): array
     {
-        $startDate = now()->subMonths(self::WINDOW_MONTHS)->startOfMonth();
+        // Window dinamis: jika data terakhir lebih lama dari now(), pakai data terakhir sebagai anchor
+        // agar import historis (mis. 2024) tetap terpakai meski sekarang 2026.
+        $lastDate = DB::table('pemakaian_obat')
+            ->where('fasilitas_id', $fasilitasId)
+            ->max('tanggal_pemakaian');
+
+        $anchor = $lastDate ? Carbon::parse($lastDate)->startOfMonth() : now()->copy()->startOfMonth();
+        $nowMonth = now()->copy()->startOfMonth();
+        $end = $anchor->greaterThan($nowMonth) ? $anchor : $nowMonth;
+        $startDate = $end->copy()->subMonths(self::WINDOW_MONTHS - 1)->startOfMonth();
 
         $bulanExpression = DB::connection()->getDriverName() === 'sqlite'
             ? "strftime('%Y-%m', p.tanggal_pemakaian)"
@@ -252,10 +261,9 @@ class PredictionService
             ->map(fn ($v): int => (int) $v)
             ->toArray();
 
-        // Zero-fill from startDate month through current month (inclusive) to keep lag indices stable.
+        // Zero-fill dari startDate sampai end (anchor) agar lag kalender stabil.
         $filled = [];
         $cursor = $startDate->copy()->startOfMonth();
-        $end = now()->copy()->startOfMonth();
 
         while ($cursor->lte($end)) {
             $key = $cursor->format('Y-m');

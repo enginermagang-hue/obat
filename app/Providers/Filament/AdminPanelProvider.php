@@ -20,6 +20,7 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
+use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -132,6 +133,7 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->authMiddleware([
+                Authenticate::class,
                 UpdateUserLastActive::class,
             ])
             ->plugin(
