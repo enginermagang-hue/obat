@@ -2,15 +2,20 @@
 
 namespace Tests\Unit;
 
+use App\Models\DetailPemakaianObat;
 use App\Models\FasilitasKesehatan;
 use App\Models\ModelPrediksi;
 use App\Models\Obat;
+use App\Models\PemakaianObat;
 use App\Services\PredictionService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class PredictionServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
     private const MIN_DATA_MONTHS = 6;
 
     private const WINDOW_MONTHS = 12;
@@ -21,12 +26,65 @@ class PredictionServiceTest extends TestCase
     {
         parent::setUp();
 
-        config(['database.connections.mysql.database' => $this->devDatabaseName()]);
+        // Try dev MySQL first if available, otherwise fallback to default testing connection (sqlite).
+        $devDb = $this->devDatabaseName();
+        $hasDevConfig = $devDb !== '' && $devDb !== 'obat';
 
-        DB::purge('mysql');
-        DB::setDefaultConnection('mysql');
+        if ($hasDevConfig) {
+            try {
+                config(['database.connections.mysql.database' => $devDb]);
+                DB::purge('mysql');
+                DB::setDefaultConnection('mysql');
+                DB::connection('mysql')->getPdo();
+            } catch (\Throwable) {
+                // Fallback to default (sqlite :memory: in phpunit.xml)
+                DB::setDefaultConnection(config('database.default'));
+            }
+        }
 
         $this->predictionService = app(PredictionService::class);
+
+        // Auto-seed minimal pemakaian data if DB is empty so tests pass in CI without dev data.
+        if (empty($this->getAllFaskesObatCombinations())) {
+            $this->seedMinimalPemakaianData();
+        }
+    }
+
+    private function seedMinimalPemakaianData(): void
+    {
+        // Ensure at least one faskes+obat with >=6 months and one with <6 months for coverage.
+        $faskesCukup = FasilitasKesehatan::factory()->create(['tipe' => 'puskesmas']);
+        $obatCukup = Obat::factory()->create();
+        $faskesKurang = FasilitasKesehatan::factory()->create(['tipe' => 'puskesmas']);
+        $obatKurang = Obat::factory()->create();
+
+        // 10 months for cukup (ensure >=6 distinct even if some months overlap due to test timing)
+        for ($i = 9; $i >= 0; $i--) {
+            $date = now()->subMonths($i)->startOfMonth()->addDays(5);
+            $pemakaian = PemakaianObat::factory()->create([
+                'fasilitas_id' => $faskesCukup->id,
+                'tanggal_pemakaian' => $date->toDateString(),
+            ]);
+            DetailPemakaianObat::factory()->create([
+                'pemakaian_id' => $pemakaian->id,
+                'obat_id' => $obatCukup->id,
+                'jumlah' => random_int(10, 50),
+            ]);
+        }
+
+        // 2 months for kurang
+        for ($i = 1; $i >= 0; $i--) {
+            $date = now()->subMonths($i)->startOfMonth()->addDays(5);
+            $pemakaian = PemakaianObat::factory()->create([
+                'fasilitas_id' => $faskesKurang->id,
+                'tanggal_pemakaian' => $date->toDateString(),
+            ]);
+            DetailPemakaianObat::factory()->create([
+                'pemakaian_id' => $pemakaian->id,
+                'obat_id' => $obatKurang->id,
+                'jumlah' => random_int(5, 20),
+            ]);
+        }
     }
 
     public function test_get_monthly_usage_untuk_semua_puskesmas(): void
@@ -238,6 +296,7 @@ class PredictionServiceTest extends TestCase
 
     /**
      * Hitung usage bulanan yang diharapkan langsung dari database.
+     * Mirip PredictionService::getMonthlyUsage dengan zero-fill agar lag stabil.
      *
      * @return array<string, int>
      */
@@ -249,7 +308,7 @@ class PredictionServiceTest extends TestCase
             ? "strftime('%Y-%m', p.tanggal_pemakaian)"
             : "DATE_FORMAT(p.tanggal_pemakaian, '%Y-%m')";
 
-        return DB::table('detail_pemakaian_obat as d')
+        $records = DB::table('detail_pemakaian_obat as d')
             ->join('pemakaian_obat as p', 'p.id', '=', 'd.pemakaian_id')
             ->selectRaw("{$bulanExpression} as bulan, SUM(d.jumlah) as total")
             ->where('p.fasilitas_id', $fasilitasId)
@@ -260,5 +319,17 @@ class PredictionServiceTest extends TestCase
             ->pluck('total', 'bulan')
             ->map(fn ($v): int => (int) $v)
             ->toArray();
+
+        $filled = [];
+        $cursor = $startDate->copy()->startOfMonth();
+        $end = now()->copy()->startOfMonth();
+
+        while ($cursor->lte($end)) {
+            $key = $cursor->format('Y-m');
+            $filled[$key] = $records[$key] ?? 0;
+            $cursor->addMonth();
+        }
+
+        return $filled;
     }
 }

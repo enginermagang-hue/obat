@@ -102,7 +102,7 @@ getMonthlyUsage(int $fasilitasId, int $obatId): array
 
 **Model serialization:** Rubix/ML RBX serializer → disimpan di kolom `model_data` (LONGTEXT).
 
-**Fallback:** Jika data < 6 bulan → status `data_belum_cukup` → prediksi via MovingAverageService (rata-rata 3 bulan terakhir + confidence interval berdasarkan std deviasi).
+**Fallback:** Jika data < 6 bulan (distinct bulan dengan pemakaian >0) → status `data_belum_cukup` → prediksi via MovingAverageService (rata-rata 3 bulan terakhir + CI 95% ±1.96 SD). Data bulanan di-zero-fill untuk 12 bulan terakhir agar lag kalender stabil.
 
 #### `MovingAverageService` API
 
@@ -141,7 +141,7 @@ Saat user memilih obat di form RKO, sistem otomatis:
 
 | #   | Komponen                           | Keterangan                                   |
 | --- | ---------------------------------- | -------------------------------------------- |
-| 12  | Schedule `routes/console.php`      | `AiTrainModels` setiap Minggu jam 02:00 WITA |
+| 12  | Schedule `routes/console.php`      | `AiTrainModels` setiap Minggu jam 02:00 WITA (timezone `APP_TIMEZONE`, default `Asia/Makassar`) — lazy chunk 50, limit 500/kali, `withoutOverlapping` |
 | 13  | Permission di `RoleAndPermissionSeeder` | Lihat tabel §6                          |
 | 14  | Tests                              | Passing (lihat §8)                           |
 
@@ -231,12 +231,13 @@ php artisan ai:train-models
   └─ 3. Tandai model sebelumnya yang aktif sebagai 'kadaluarsa'
 ```
 
-**Schedule:** Setiap Minggu jam 02:00 (via `routes/console.php`)
+**Schedule:** Setiap Minggu jam 02:00 WITA (via `routes/console.php`, `APP_TIMEZONE=Asia/Makassar`)
 ```php
 Schedule::command(\App\Console\Commands\AiTrainModels::class)
     ->weekly()->sundays()->at('02:00')
     ->withoutOverlapping()->runInBackground();
 ```
+Catatan: `getMonthlyUsage()` zero-fill 12 bulan (termasuk 0 untuk bulan tanpa pemakaian) dan `getCurrentStock()` fallback ke `batch_stok` jika agregat hilang. CI = ±1.96 SD (95%).
 
 ---
 

@@ -7,6 +7,7 @@ use App\Models\ModelPrediksi;
 use App\Models\Obat;
 use App\Services\PredictionService;
 use Illuminate\Console\Command;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -25,9 +26,9 @@ class AiTrainModels extends Command
     private const CHUNK_SIZE = 50;
 
     /**
-     * Maximum combinations to process in one run.
+     * Maximum combinations to process in one run (selaras docs: 500).
      */
-    private const MAX_COMBINATIONS = 2500;
+    private const MAX_COMBINATIONS = 500;
 
     public function handle(PredictionService $predictionService): int
     {
@@ -39,8 +40,8 @@ class AiTrainModels extends Command
         $predictionsGenerated = 0;
         $errors = 0;
 
-        $combinations = $this->getCombinations();
-        $totalCombinations = $combinations->count();
+        $query = $this->buildCombinationsQuery();
+        $totalCombinations = (clone $query)->count();
 
         if ($totalCombinations === 0) {
             $this->warn('No facility+drug combinations with usage data found.');
@@ -51,6 +52,8 @@ class AiTrainModels extends Command
         $this->info("Found {$totalCombinations} combinations to process.");
         $progressBar = $this->output->createProgressBar(min($totalCombinations, self::MAX_COMBINATIONS));
         $progressBar->start();
+
+        $combinations = $query->orderBy('p.fasilitas_id')->orderBy('d.obat_id')->lazy(self::CHUNK_SIZE);
 
         foreach ($combinations as $combo) {
             if ($processed >= self::MAX_COMBINATIONS) {
@@ -124,14 +127,9 @@ class AiTrainModels extends Command
     }
 
     /**
-     * Get distinct facility + drug combinations that have usage data.
-     *
-     * Reads from detail_pemakaian_obat joined with pemakaian_obat header
-     * (header holds fasilitas_id, detail holds obat_id).
-     *
-     * @return Collection<int, object{fasilitas_id: int, obat_id: int}>
+     * Build base query for distinct facility + drug combinations.
      */
-    private function getCombinations(): Collection
+    private function buildCombinationsQuery(): Builder
     {
         $query = DB::table('detail_pemakaian_obat as d')
             ->join('pemakaian_obat as p', 'p.id', '=', 'd.pemakaian_id')
@@ -145,6 +143,16 @@ class AiTrainModels extends Command
             $query->where('d.obat_id', (int) $this->option('obat-id'));
         }
 
-        return $query->get();
+        return $query;
+    }
+
+    /**
+     * Get distinct facility + drug combinations that have usage data.
+     *
+     * @return Collection<int, object{fasilitas_id: int, obat_id: int}>
+     */
+    private function getCombinations(): Collection
+    {
+        return $this->buildCombinationsQuery()->get();
     }
 }

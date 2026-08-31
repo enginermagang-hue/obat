@@ -53,13 +53,19 @@ class TabulasiImportService
         return $files;
     }
 
-    public function parseFile(string $filePath): array
+    public function parseFile(string $filePath, ?int $overrideFaskesId = null): array
     {
         $spreadsheet = IOFactory::load($filePath);
         $sheet = $spreadsheet->getActiveSheet();
         $maxCol = $sheet->getHighestColumn();
         $maxColIndex = Coordinate::columnIndexFromString($maxCol);
         $maxRow = $sheet->getHighestRow();
+
+        // Deteksi format prediksi wide terlebih dahulu (minimal header baris 1).
+        $prediksiMeta = $this->detectPrediksiWide($sheet, $maxColIndex);
+        if ($prediksiMeta !== null) {
+            return $this->parsePrediksiWideFile($sheet, $maxRow, $prediksiMeta, $overrideFaskesId);
+        }
 
         $format = $this->detectFormat($maxColIndex);
         $faskesName = $this->extractFaskesName($sheet);
@@ -90,16 +96,233 @@ class TabulasiImportService
         ];
     }
 
-    public function validateData(array $data): array
+    /**
+     * Deteksi format Opsi A — minimal wide: header baris 1 berisi kode_obat + minimal 3 kolom periode YYYY-MM.
+     *
+     * @return array{col_kode:int,col_nama:int,col_satuan:int,col_stok:int|null,periode_cols:array<int, string>}|null
+     */
+    private function detectPrediksiWide($sheet, int $maxColIndex): ?array
+    {
+        $headers = [];
+        $rawHeaders = [];
+        for ($col = 1; $col <= $maxColIndex; $col++) {
+            $cell = $sheet->getCell($this->colLetter($col).'1');
+            $raw = $cell->getValue();
+            // Handle Excel date-formatted headers that become numeric
+            if ($cell->getDataType() === 'n' && is_numeric($raw)) {
+                $raw = (string) $raw;
+            }
+            $val = trim((string) ($raw ?? ''));
+            $rawHeaders[$col] = $val;
+            $headers[$col] = mb_strtolower($val);
+        }
+
+        $hasKode = false;
+        $colKode = null;
+        $colNama = null;
+        $colSatuan = null;
+        $colStok = null;
+        foreach ($headers as $col => $h) {
+            $hNorm = preg_replace('/\s+/', ' ', trim($h));
+            $hNorm = str_replace(['-', '_'], ' ', $hNorm);
+            $hCompact = str_replace(' ', '', $hNorm);
+            if (in_array($h, ['kode_obat', 'kode obat', 'kode'], true) || str_contains($hCompact, 'kodeobat') || str_contains($h, 'kode')) {
+                if ($colKode === null) {
+                    $colKode = $col;
+                    $hasKode = true;
+                }
+            }
+            if (in_array($hNorm, ['nama obat', 'namaobat'], true) || $h === 'nama_obat' || $h === 'nama obat') {
+                $colNama = $col;
+            }
+            if ($hNorm === 'satuan' || $h === 'satuan') {
+                $colSatuan = $col;
+            }
+            if (in_array($hNorm, ['stok akhir', 'stokakhir', 'sisa stok', 'sisastok'], true) || in_array($h, ['stok_akhir', 'stok akhir', 'stok', 'sisa_stok', 'sisa stok'], true)) {
+                $colStok = $col;
+            }
+        }
+
+        if (! $hasKode) {
+            return null;
+        }
+
+        // Kolom periode: header cocok YYYY-MM, YYYY/MM, YYYY_MM, YYYY.MM, YYYY MM, atau Excel date
+        $periodeCols = [];
+        foreach ($headers as $col => $h) {
+            $raw = $rawHeaders[$col] ?? $h;
+            // Excel may store 2024-01 as date 2024-01-01 or as formatted string
+            $normalized = trim($raw);
+            $normalized = str_replace(['/', '_', '.', ' '], '-', $normalized);
+            $normalized = preg_replace('/-+/', '-', $normalized);
+            $normalized = trim($normalized, '-');
+            // Strip day if YYYY-MM-DD
+            if (preg_match('/^(\d{4})-(\d{1,2})-\d{1,2}$/', $normalized, $m)) {
+                $normalized = $m[1].'-'.$m[2];
+            }
+            if (preg_match('/^\d{4}-\d{1,2}$/', $normalized)) {
+                [$y, $mVal] = explode('-', $normalized);
+                $mVal = (int) $mVal;
+                if ($mVal >= 1 && $mVal <= 12) {
+                    $periodeCols[$col] = sprintf('%04d-%02d', (int) $y, $mVal);
+                }
+            }
+        }
+
+        if (count($periodeCols) < 3) {
+            return null;
+        }
+
+        ksort($periodeCols);
+
+        return [
+            'col_kode' => $colKode,
+            'col_nama' => $colNama,
+            'col_satuan' => $colSatuan,
+            'col_stok' => $colStok,
+            'periode_cols' => $periodeCols,
+        ];
+    }
+
+    private function parsePrediksiWideFile($sheet, int $maxRow, array $meta, ?int $overrideFaskesId = null): array
+    {
+        // 1 file = 1 faskes via dropdown; sheet name tidak dipakai jika override ada
+        $faskesName = $overrideFaskesId ? (FasilitasKesehatan::find($overrideFaskesId)?->nama ?? 'Faskes #'.$overrideFaskesId) : $this->extractFaskesName($sheet);
+        $periodeCols = $meta['periode_cols'];
+        $colKode = $meta['col_kode'];
+        $colNama = $meta['col_nama'];
+        $colSatuan = $meta['col_satuan'];
+        $colStok = $meta['col_stok'];
+
+        // Harga opsional: cari header harga
+        $colHarga = null;
+        $maxColIndex = Coordinate::columnIndexFromString($sheet->getHighestColumn());
+        for ($col = 1; $col <= $maxColIndex; $col++) {
+            $h = mb_strtolower(trim((string) ($sheet->getCell($this->colLetter($col).'1')->getValue() ?? '')));
+            if (in_array($h, ['harga', 'harga_satuan', 'harga satuan'], true)) {
+                $colHarga = $col;
+                break;
+            }
+        }
+
+        $obatList = [];
+        for ($row = 2; $row <= $maxRow; $row++) {
+            $kodeObat = trim((string) ($sheet->getCell($this->colLetter($colKode).$row)->getValue() ?? ''));
+            if (blank($kodeObat)) {
+                continue;
+            }
+
+            // Lewati baris yang kode_obat bukan alnum (misal header ulang)
+            if (! preg_match('/^[A-Za-z0-9_-]+$/', $kodeObat)) {
+                continue;
+            }
+
+            $namaObat = $colNama ? trim((string) ($sheet->getCell($this->colLetter($colNama).$row)->getValue() ?? '')) : '';
+            $satuan = $colSatuan ? trim((string) ($sheet->getCell($this->colLetter($colSatuan).$row)->getValue() ?? '')) : '';
+            $harga = $colHarga ? (float) ($sheet->getCell($this->colLetter($colHarga).$row)->getValue() ?? 0) : 0;
+
+            $periodeMap = [];
+            $totalPemakaian = 0;
+            foreach ($periodeCols as $col => $periodeKey) {
+                $cell = $sheet->getCell($this->colLetter($col).$row);
+                $val = $cell->getCalculatedValue() ?? $cell->getValue();
+                $jumlah = $this->parseNumericCell($val);
+                $periodeMap[$periodeKey] = $jumlah;
+                $totalPemakaian += $jumlah;
+            }
+
+            $stokAkhir = 0;
+            if ($colStok) {
+                $cell = $sheet->getCell($this->colLetter($colStok).$row);
+                $stokVal = $cell->getCalculatedValue() ?? $cell->getValue();
+                $stokAkhir = $this->parseNumericCell($stokVal);
+            }
+
+            // Bangun array bulan 1..12 untuk kompatibilitas import single-tahun (tahun dominan).
+            $tahunDominan = null;
+            if (! empty($periodeMap)) {
+                $tahunCounts = [];
+                foreach (array_keys($periodeMap) as $k) {
+                    $y = (int) explode('-', $k)[0];
+                    $tahunCounts[$y] = ($tahunCounts[$y] ?? 0) + 1;
+                }
+                arsort($tahunCounts);
+                $tahunDominan = (int) array_key_first($tahunCounts);
+            }
+
+            $bulan = [];
+            for ($b = 1; $b <= 12; $b++) {
+                $bulan[$b] = ['sa' => 0, 'penerimaan' => 0, 'pemakaian' => 0, 'stok_akhir' => 0];
+            }
+            foreach ($periodeMap as $key => $jumlah) {
+                [$y, $m] = array_map('intval', explode('-', $key));
+                if ($tahunDominan !== null && $y === $tahunDominan) {
+                    $bulan[$m]['pemakaian'] = $jumlah;
+                    // stok_akhir pada bulan terakhir periode untuk tahun dominan
+                }
+            }
+            // Stok akhir bulan 12 dari kolom stok_akhir jika ada
+            if ($stokAkhir > 0) {
+                $bulan[12]['stok_akhir'] = $stokAkhir;
+            }
+
+            $obatList[] = [
+                'kode_obat' => $kodeObat,
+                'nama_obat' => $namaObat,
+                'satuan' => $satuan,
+                'harga' => $harga,
+                'bulan' => $bulan,
+                'periode_map' => $periodeMap,
+                'periode_columns' => array_values($periodeCols),
+                'tahun_dominan' => $tahunDominan,
+                'total_penerimaan' => 0,
+                'total_pemakaian' => $totalPemakaian,
+                'stok_akhir_des' => $stokAkhir,
+                'rko' => 0,
+                'pemakaian_bulanan' => $totalPemakaian > 0 ? (int) round($totalPemakaian / max(1, count($periodeMap))) : 0,
+            ];
+        }
+
+        // Tahun dominan untuk 1 file = 1 tahun (dominan)
+        $topTahunDominan = null;
+        if (! empty($periodeCols)) {
+            $tahunCounts = [];
+            foreach (array_values($periodeCols) as $p) {
+                $y = (int) explode('-', $p)[0];
+                $tahunCounts[$y] = ($tahunCounts[$y] ?? 0) + 1;
+            }
+            arsort($tahunCounts);
+            $topTahunDominan = (int) array_key_first($tahunCounts);
+        }
+
+        return [
+            'faskes_name' => $faskesName,
+            'override_faskes_id' => $overrideFaskesId,
+            'format' => 'prediksi_wide',
+            'total_rows' => count($obatList),
+            'obat' => $obatList,
+            'periode_columns' => array_values($periodeCols),
+            'tahun_dominan' => $topTahunDominan,
+        ];
+    }
+
+    public function validateData(array $data, ?int $fasilitasId = null, ?int $tahun = null): array
     {
         $errors = [];
         $warnings = [];
 
-        $faskesName = $data['faskes_name'];
-        $faskes = FasilitasKesehatan::where('nama', 'like', "%{$faskesName}%")->first();
-
-        if (! $faskes) {
-            $warnings[] = "Faskes '{$faskesName}' belum ada di database. Akan dibuat otomatis.";
+        // Jika dropdown dipilih, faskes wajib ada & tidak auto-create
+        if ($fasilitasId !== null) {
+            $faskes = FasilitasKesehatan::find($fasilitasId);
+            if (! $faskes) {
+                $errors[] = "Fasilitas dengan ID {$fasilitasId} tidak ditemukan. Pilih faskes yang valid.";
+            }
+        } else {
+            $faskesName = $data['faskes_name'] ?? 'Unknown';
+            $faskes = FasilitasKesehatan::where('nama', 'like', "%{$faskesName}%")->first();
+            if (! $faskes) {
+                $errors[] = "Faskes '{$faskesName}' tidak ditemukan. Pilih faskes dari dropdown (auto-create dimatikan).";
+            }
         }
 
         $obatCodes = collect($data['obat'])->pluck('kode_obat')->unique()->values();
@@ -108,6 +331,31 @@ class TabulasiImportService
 
         if ($missing->isNotEmpty()) {
             $errors[] = 'Kode obat tidak ditemukan: '.$missing->implode(', ');
+        }
+
+        if (($data['format'] ?? '') === 'prediksi_wide') {
+            $periodeCount = count($data['periode_columns'] ?? []);
+            if ($periodeCount < 6) {
+                $warnings[] = "Format prediksi_wide terdeteksi dengan {$periodeCount} periode. Minimal 6 bulan untuk AI Gradient Boost, 3 bulan untuk fallback Moving Average. Tambah kolom periode YYYY-MM.";
+            } elseif ($periodeCount < 12) {
+                $warnings[] = "Hanya {$periodeCount} periode terdeteksi. Untuk akurasi optimal, gunakan 12 bulan.";
+            }
+
+            // Validasi tahun: ideal 1 tahun, tapi izinkan lintas 2 tahun untuk 12 bulan terakhir (mis. 2025-07 s/d 2026-06).
+            if ($tahun !== null && ! empty($data['periode_columns'])) {
+                $tahunList = collect($data['periode_columns'])->map(fn ($p) => (int) explode('-', $p)[0])->unique()->sort()->values();
+                if ($tahunList->count() > 2) {
+                    $errors[] = 'Template mengandung lebih dari 2 tahun ('.implode(', ', $tahunList->all()).'). Maksimal lintas 2 tahun untuk 12 bulan terakhir. Pisah menjadi 2 file atau sesuaikan header YYYY-MM.';
+                } elseif ($tahunList->count() === 2) {
+                    if (! $tahunList->contains((int) $tahun)) {
+                        $errors[] = 'Tahun terpilih ('.$tahun.') tidak ada di header ('.implode(', ', $tahunList->all()).'). Pilih Tahun yang ada di header atau sesuaikan kolom YYYY-MM.';
+                    } else {
+                        $warnings[] = 'Template lintas 2 tahun ('.implode(', ', $tahunList->all()).') — akan diimpor semua periode; pastikan 12 bulan terakhir berurutan.';
+                    }
+                } elseif ($tahunList->count() === 1 && (int) $tahunList->first() !== (int) $tahun) {
+                    $errors[] = 'Tahun pada header ('.$tahunList->first().') tidak sesuai dengan Tahun terpilih ('.$tahun.'). Ubah header YYYY-MM atau pilih Tahun yang benar.';
+                }
+            }
         }
 
         return [
@@ -124,21 +372,58 @@ class TabulasiImportService
     {
         $targets = $options['targets'] ?? [];
         $tahun = $options['tahun'] ?? 2024;
-        $autoCreateFaskes = $options['auto_create_faskes'] ?? true;
         $dryRun = $options['dry_run'] ?? false;
+        // 1 file = 1 faskes via dropdown — tidak auto-create
+        $overrideFaskesId = $options['fasilitas_id'] ?? $data['override_faskes_id'] ?? null;
 
         $result = [
-            'faskes_name' => $data['faskes_name'],
+            'faskes_name' => $data['faskes_name'] ?? 'Unknown',
             'dry_run' => $dryRun,
             'targets' => [],
             'errors' => [],
         ];
 
-        $faskesId = $this->resolveFaskesId($data['faskes_name'], $autoCreateFaskes, $dryRun);
-        if (! $faskesId) {
-            $result['errors'][] = "Faskes '{$data['faskes_name']}' tidak ditemukan dan auto-create nonaktif.";
+        // Validasi silang tahun vs header periode untuk prediksi_wide — cegah silent 0 pemakaian.
+        // Izinkan lintas 2 tahun (12 bulan terakhir), maksimal 2 tahun berbeda.
+        if (($data['format'] ?? '') === 'prediksi_wide' && ! empty($data['periode_columns'])) {
+            $tahunList = collect($data['periode_columns'])->map(fn ($p) => (int) explode('-', $p)[0])->unique()->sort()->values();
+            if ($tahunList->count() > 2) {
+                $result['errors'][] = 'Template mengandung lebih dari 2 tahun ('.implode(', ', $tahunList->all()).'). Maksimal lintas 2 tahun untuk 12 bulan terakhir.';
 
-            return $result;
+                return $result;
+            }
+            if ($tahunList->count() === 1 && (int) $tahunList->first() !== (int) $tahun) {
+                $result['errors'][] = 'Tahun pada header ('.$tahunList->first().') tidak sesuai dengan Tahun terpilih ('.$tahun.'). Ubah header YYYY-MM atau pilih Tahun yang benar.';
+
+                return $result;
+            }
+            if ($tahunList->count() === 2 && ! $tahunList->contains((int) $tahun)) {
+                $result['errors'][] = 'Tahun terpilih ('.$tahun.') tidak ada di header ('.implode(', ', $tahunList->all()).'). Pilih Tahun yang ada di header.';
+
+                return $result;
+            }
+        }
+
+        $faskesId = null;
+        if ($overrideFaskesId) {
+            $faskes = FasilitasKesehatan::find($overrideFaskesId);
+            if (! $faskes) {
+                $result['errors'][] = "Faskes ID {$overrideFaskesId} tidak ditemukan. Pilih faskes dari dropdown.";
+
+                return $result;
+            }
+            $faskesId = $faskes->id;
+            $result['faskes_name'] = $faskes->nama;
+        } else {
+            // Fallback untuk file legacy tanpa dropdown — tetap tanpa auto-create
+            $faskesName = $data['faskes_name'] ?? 'Unknown';
+            $faskes = FasilitasKesehatan::where('nama', 'like', "%{$faskesName}%")->first();
+            if (! $faskes) {
+                $result['errors'][] = "Faskes '{$faskesName}' tidak ditemukan. Pilih faskes dari dropdown (auto-create dimatikan).";
+
+                return $result;
+            }
+            $faskesId = $faskes->id;
         }
 
         $obatMap = Obat::whereIn('kode_obat', collect($data['obat'])->pluck('kode_obat'))
@@ -149,6 +434,13 @@ class TabulasiImportService
 
         $obatHargaMap = Obat::whereIn('kode_obat', collect($data['obat'])->pluck('kode_obat'))
             ->pluck('harga_satuan', 'kode_obat');
+
+        if (in_array('pemakaian', $targets) && $obatMap->isEmpty() && ! empty($data['obat'])) {
+            $sampleKode = collect($data['obat'])->pluck('kode_obat')->take(3)->implode(', ');
+            $result['errors'][] = "Tidak ada kode_obat yang cocok dengan master obat. Contoh kode di file: {$sampleKode}. Periksa master obat atau format kode (tanpa spasi, tanpa leading zero hilang).";
+
+            return $result;
+        }
 
         try {
             DB::beginTransaction();
@@ -171,6 +463,22 @@ class TabulasiImportService
 
             if (in_array('pemakaian', $targets)) {
                 $result['targets']['pemakaian'] = $this->importPemakaian($data, $faskesId, $obatMap, $tahun, $dryRun);
+                $pemakaianResult = $result['targets']['pemakaian'];
+                $totalPemakaianFile = collect($data['obat'])->sum(fn ($o) => $this->getTotalPemakaianForTahun($o, $tahun));
+                $matchedObat = $obatMap->count();
+                $fileObat = count($data['obat']);
+                if (($pemakaianResult['reports'] ?? 0) === 0) {
+                    if ($totalPemakaianFile > 0) {
+                        if ($matchedObat === 0) {
+                            $result['errors'][] = "Pemakaian tidak ter-import: 0 obat cocok (file {$fileObat} baris, 0 matched). Periksa kode_obat master.";
+                        } else {
+                            $result['errors'][] = "Pemakaian tidak ter-import: total pemakaian {$totalPemakaianFile} untuk tahun {$tahun} terdeteksi di file ({$matchedObat}/{$fileObat} obat cocok), tapi 0 laporan dibuat. Cek Tahun terpilih vs header YYYY-MM (file: ".implode(', ', $data['periode_columns'] ?? []).').';
+                        }
+                    } elseif ($matchedObat > 0) {
+                        // Semua nilai periode 0 — beri warning eksplisit bukan error
+                        $result['errors'][] = "Pemakaian 0: semua nilai periode YYYY-MM untuk tahun {$tahun} adalah 0 (file: ".implode(', ', array_slice($data['periode_columns'] ?? [], 0, 3)).'...). Isi jumlah pemakaian di kolom periode.';
+                    }
+                }
             }
 
             if ($dryRun) {
@@ -455,7 +763,7 @@ class TabulasiImportService
 
             $harga = (float) ($obatHargaMap[$obat['kode_obat']] ?? $obat['harga'] ?? 0);
             $usulan = max(0, (int) ($obat['rko'] ?? 0));
-            $pemakaianTahunLalu = $obat['total_pemakaian'] ?? 0;
+            $pemakaianTahunLalu = $this->getTotalPemakaianForTahun($obat, $tahun);
             $rataRata = (int) round($pemakaianTahunLalu / 12);
             $stokAkhir = max(0, $obat['stok_akhir_des']);
             $kebutuhan = $rataRata * 18;
@@ -571,15 +879,110 @@ class TabulasiImportService
         return ['reports' => $reportsCreated, 'details' => $detailsCreated];
     }
 
+    private function getPemakaianForMonth(array $obat, int $tahun, int $bulan): int
+    {
+        if (isset($obat['periode_map'])) {
+            $key = sprintf('%04d-%02d', $tahun, $bulan);
+
+            return max(0, (int) ($obat['periode_map'][$key] ?? 0));
+        }
+
+        return max(0, (int) ($obat['bulan'][$bulan]['pemakaian'] ?? 0));
+    }
+
+    private function getTotalPemakaianForTahun(array $obat, int $tahun): int
+    {
+        if (isset($obat['periode_map'])) {
+            $total = 0;
+            foreach ($obat['periode_map'] as $key => $val) {
+                if (str_starts_with($key, sprintf('%04d-', $tahun))) {
+                    $total += max(0, (int) $val);
+                }
+            }
+
+            return $total;
+        }
+
+        return max(0, (int) ($obat['total_pemakaian'] ?? 0));
+    }
+
     private function importPemakaian(array $data, int $faskesId, $obatMap, int $tahun, bool $dryRun): array
     {
         $reportsCreated = 0;
         $detailsCreated = 0;
 
+        // Prediksi wide: iterate over actual YYYY-MM periods (supports lintasan 2 tahun, e.g. 2025-07 s/d 2026-06)
+        if (($data['format'] ?? '') === 'prediksi_wide' && ! empty($data['periode_columns'])) {
+            $periods = collect($data['periode_columns'])->unique()->sort()->values()->all();
+
+            foreach ($periods as $period) {
+                if (! preg_match('/^(\d{4})-(\d{1,2})$/', $period, $m)) {
+                    continue;
+                }
+
+                $y = (int) $m[1];
+                $mo = (int) $m[2];
+
+                $adaPemakaian = false;
+                foreach ($data['obat'] as $obat) {
+                    if ((int) ($obat['periode_map'][$period] ?? 0) > 0) {
+                        $adaPemakaian = true;
+                        break;
+                    }
+                }
+
+                if (! $adaPemakaian) {
+                    continue;
+                }
+
+                if ($dryRun) {
+                    $reportsCreated++;
+                    foreach ($data['obat'] as $obat) {
+                        if ((int) ($obat['periode_map'][$period] ?? 0) > 0) {
+                            $detailsCreated++;
+                        }
+                    }
+
+                    continue;
+                }
+
+                $lastDay = cal_days_in_month(CAL_GREGORIAN, $mo, $y);
+                $pemakaian = PemakaianObat::create([
+                    'nomor_pemakaian' => 'PMK-'.date('Ymd').'-'.str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT),
+                    'fasilitas_id' => $faskesId,
+                    'tanggal_pemakaian' => Carbon::createFromDate($y, $mo, $lastDay)->toDateString(),
+                    'jenis_pelayanan' => 'lainnya',
+                    'user_id' => $this->adminUserId,
+                ]);
+
+                foreach ($data['obat'] as $obat) {
+                    $jml = (int) ($obat['periode_map'][$period] ?? 0);
+                    if ($jml <= 0) {
+                        continue;
+                    }
+
+                    $obatId = $obatMap[$obat['kode_obat']] ?? null;
+                    if (! $obatId) {
+                        continue;
+                    }
+
+                    $pemakaian->details()->create([
+                        'obat_id' => $obatId,
+                        'jumlah' => $jml,
+                    ]);
+                    $detailsCreated++;
+                }
+
+                $reportsCreated++;
+            }
+
+            return ['reports' => $reportsCreated, 'details' => $detailsCreated];
+        }
+
         for ($bulan = 1; $bulan <= 12; $bulan++) {
             $adaPemakaian = false;
             foreach ($data['obat'] as $obat) {
-                if (($obat['bulan'][$bulan]['pemakaian'] ?? 0) > 0) {
+                if ($this->getPemakaianForMonth($obat, $tahun, $bulan) > 0) {
                     $adaPemakaian = true;
                     break;
                 }
@@ -592,7 +995,7 @@ class TabulasiImportService
             if ($dryRun) {
                 $reportsCreated++;
                 foreach ($data['obat'] as $obat) {
-                    if (($obat['bulan'][$bulan]['pemakaian'] ?? 0) > 0) {
+                    if ($this->getPemakaianForMonth($obat, $tahun, $bulan) > 0) {
                         $detailsCreated++;
                     }
                 }
@@ -610,7 +1013,7 @@ class TabulasiImportService
             ]);
 
             foreach ($data['obat'] as $obat) {
-                $jml = $obat['bulan'][$bulan]['pemakaian'] ?? 0;
+                $jml = $this->getPemakaianForMonth($obat, $tahun, $bulan);
                 if ($jml <= 0) {
                     continue;
                 }
@@ -636,5 +1039,43 @@ class TabulasiImportService
     private function colLetter(int $colIndex): string
     {
         return Coordinate::stringFromColumnIndex($colIndex);
+    }
+
+    private function parseNumericCell(mixed $val): int
+    {
+        if ($val === null || $val === '') {
+            return 0;
+        }
+        if (is_numeric($val)) {
+            return max(0, (int) $val);
+        }
+        // Handle strings like "1.000", "1,000", " 10 ", "10.5"
+        $str = trim((string) $val);
+        if ($str === '') {
+            return 0;
+        }
+        // Remove thousand separators, keep decimal point comma handling
+        // "1.000" (ID thousand) -> 1000, "1,000.5" -> 1000.5
+        $str = str_replace([' ', "\xc2\xa0"], '', $str); // nbsp
+        if (preg_match('/^-?\d{1,3}(\.\d{3})+,\d+$/', $str)) {
+            // e.g. 1.234,56 -> 1234.56
+            $str = str_replace('.', '', $str);
+            $str = str_replace(',', '.', $str);
+        } elseif (preg_match('/^-?\d{1,3}(,\d{3})+(\.\d+)?$/', $str)) {
+            $str = str_replace(',', '', $str);
+        } elseif (str_contains($str, ',') && ! str_contains($str, '.')) {
+            // "1,5" could be decimal comma, but pemakaian is integer — treat comma as thousand or decimal
+            // If single comma with 1-2 digits after, treat as decimal; otherwise remove
+            if (preg_match('/^-?\d+,\d{1,2}$/', $str)) {
+                $str = str_replace(',', '.', $str);
+            } else {
+                $str = str_replace(',', '', $str);
+            }
+        }
+        if (is_numeric($str)) {
+            return max(0, (int) (float) $str);
+        }
+
+        return 0;
     }
 }

@@ -85,8 +85,15 @@
                                 </div>
                             </x-slot>
                             <x-slot name="description">
-                                Format: {{ $data['format'] }} | {{ $data['total_rows'] }} obat |
-                                Faskes: {{ ($data['faskes_exists'] ?? false) ? 'Sudah ada (ID: ' . ($data['faskes_id'] ?? '-') . ')' : 'Baru (auto-create)' }}
+                                Format: {{ $data['format'] }}
+                                @if (($data['format'] ?? '') === 'prediksi_wide' && !empty($data['periode_columns']))
+                                    ({{ implode(', ', array_slice($data['periode_columns'], 0, 4)) }}{{ count($data['periode_columns']) > 4 ? ' … +'.(count($data['periode_columns'])-4).' periode' : '' }})
+                                @endif
+                                | {{ $data['total_rows'] }} obat |
+                                Faskes: {{ ($data['faskes_exists'] ?? false) ? ($data['faskes_label'] ?? 'ID: '.($data['faskes_id'] ?? '-')) : 'Tidak ditemukan — cek dropdown' }}
+                                @if (!empty($data['tahun_dominan']))
+                                    | Tahun file: {{ $data['tahun_dominan'] }}
+                                @endif
                             </x-slot>
 
                             @if (!empty($validation['warnings']))
@@ -233,6 +240,9 @@
                                                 @endif
                                                 @if (isset($targetResult['skipped']))
                                                     <p class="text-warning-600">Skipped: {{ $targetResult['reason'] ?? '' }}</p>
+                                                @endif
+                                                @if ($target === 'pemakaian' && ($targetResult['reports'] ?? 0) === 0 && ($targetResult['details'] ?? 0) === 0)
+                                                    <p class="text-warning-600 font-medium">⚠ 0 laporan — cek Tahun terpilih vs header YYYY-MM (harus 1 tahun yang sama).</p>
                                                 @endif
                                             </div>
                                         </div>

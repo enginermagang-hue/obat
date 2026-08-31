@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\BatchStok;
 use App\Models\FasilitasKesehatan;
 use App\Models\ModelPrediksi;
 use App\Models\Obat;
@@ -40,7 +41,9 @@ class PredictionService
     {
         $monthlyData = $this->getMonthlyUsage($faskes->id, $obat->id);
 
-        $dataCount = count($monthlyData);
+        // Count months with actual usage (>0) to keep the 6-month threshold meaningful after zero-fill.
+        $distinctMonths = count(array_filter($monthlyData, fn (int $v): bool => $v > 0));
+        $dataCount = $distinctMonths;
 
         if ($dataCount < self::MIN_DATA_MONTHS) {
             return $this->createInsufficientDataModel($faskes, $obat, $dataCount);
@@ -201,6 +204,7 @@ class PredictionService
                 $predictedSoFar[] = $predictedAmount;
 
                 $stdDev = $this->calculateStdDev($historicalValues);
+                $margin = (int) round(1.96 * $stdDev);
 
                 $prediction = $this->savePrediction(
                     model: $model,
@@ -209,8 +213,8 @@ class PredictionService
                     bulan: (int) $targetMonth->format('n'),
                     tahun: (int) $targetMonth->format('Y'),
                     jumlahPrediksi: $predictedAmount,
-                    confidenceLower: max(0, $predictedAmount - (int) round($stdDev)),
-                    confidenceUpper: $predictedAmount + (int) round($stdDev),
+                    confidenceLower: max(0, $predictedAmount - $margin),
+                    confidenceUpper: $predictedAmount + $margin,
                     metode: 'ai_gradient_boost',
                 );
                 $predictions->push($prediction);
@@ -224,6 +228,7 @@ class PredictionService
 
     /**
      * Get monthly aggregated usage data for a facility + drug.
+     * Zero-filled for the last WINDOW_MONTHS months so lag features are calendar-correct.
      *
      * @return array<string, int> key = 'Y-m', value = total usage
      */
@@ -247,7 +252,18 @@ class PredictionService
             ->map(fn ($v): int => (int) $v)
             ->toArray();
 
-        return $records;
+        // Zero-fill from startDate month through current month (inclusive) to keep lag indices stable.
+        $filled = [];
+        $cursor = $startDate->copy()->startOfMonth();
+        $end = now()->copy()->startOfMonth();
+
+        while ($cursor->lte($end)) {
+            $key = $cursor->format('Y-m');
+            $filled[$key] = $records[$key] ?? 0;
+            $cursor->addMonth();
+        }
+
+        return $filled;
     }
 
     /**
@@ -281,25 +297,17 @@ class PredictionService
         $lag2 = $combinedCount >= 2 ? $combinedValues[$combinedCount - 2] : 0;
         $lag3 = $combinedCount >= 3 ? $combinedValues[$combinedCount - 3] : 0;
 
-        if ($predictionMode) {
-            $avg6Values = array_slice($combinedValues, -6);
-            $avg12Values = array_slice($combinedValues, -12);
-        } else {
-            $sliceEnd = $targetIndex + 1;
-            $avg6Values = array_slice($values, max(0, $sliceEnd - 6), 6);
-            $avg12Values = array_slice($values, max(0, $sliceEnd - 12), 12);
-        }
+        // Unified window logic: use effective history up to target (plus predictions when forecasting).
+        $effectiveValues = $predictionMode ? $combinedValues : array_slice($values, 0, $targetIndex + 1);
+        $avg6Values = array_slice($effectiveValues, -6);
+        $avg12Values = array_slice($effectiveValues, -12);
 
         $avg6 = ! empty($avg6Values) ? array_sum($avg6Values) / count($avg6Values) : 0;
         $avg12 = ! empty($avg12Values) ? array_sum($avg12Values) / count($avg12Values) : 0;
 
-        $month = $targetIndex !== false && isset($keys[$targetIndex])
-            ? (int) Carbon::parse($keys[$targetIndex].'-01')->format('n')
-            : (int) Carbon::parse($targetKey.'-01')->format('n');
+        $month = (int) Carbon::parse($targetKey.'-01')->format('n');
 
-        $trendValues = $predictionMode
-            ? array_slice($combinedValues, -3)
-            : array_slice($values, max(0, $targetIndex - 2), 3);
+        $trendValues = array_slice($effectiveValues, -3);
         $trend = $this->calculateTrend($trendValues, 3);
 
         $currentStock = $this->getCurrentStock($faskes->id, $obat->id);
@@ -391,24 +399,45 @@ class PredictionService
 
     /**
      * Get current stock for a facility + drug.
+     * Aggregates StokFaskes if present, else falls back to BatchStok sum for robustness.
      */
     private function getCurrentStock(int $fasilitasId, int $obatId): int
     {
         $stok = StokFaskes::query()
             ->where('fasilitas_id', $fasilitasId)
             ->where('obat_id', $obatId)
-            ->first();
+            ->value('jumlah');
 
         if ($stok !== null) {
-            return $stok->jumlah;
+            return (int) $stok;
+        }
+
+        // Fallback to batch-level stock (tersedia) when aggregate row missing.
+        $batchSum = BatchStok::query()
+            ->where('obat_id', $obatId)
+            ->where('status', 'tersedia')
+            ->where('jumlah', '>', 0)
+            ->where('fasilitas_id', $fasilitasId)
+            ->sum('jumlah');
+
+        if ($batchSum > 0) {
+            return (int) $batchSum;
         }
 
         $faskes = FasilitasKesehatan::find($fasilitasId);
 
         if ($faskes?->tipe === 'gudang') {
-            return StokGudang::query()
+            $gudangJumlah = StokGudang::query()->where('obat_id', $obatId)->value('jumlah');
+
+            if ($gudangJumlah !== null) {
+                return (int) $gudangJumlah;
+            }
+
+            return (int) BatchStok::query()
                 ->where('obat_id', $obatId)
-                ->first()?->jumlah ?? 0;
+                ->whereNull('fasilitas_id')
+                ->where('status', 'tersedia')
+                ->sum('jumlah');
         }
 
         return 0;

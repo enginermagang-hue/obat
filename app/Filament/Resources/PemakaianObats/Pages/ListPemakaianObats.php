@@ -59,6 +59,7 @@ class ListPemakaianObats extends ListRecords implements HasForms
                         Select::make('filterFaskesId')
                             ->label('Fasilitas')
                             ->native(false)
+                            ->searchable()
                             ->live()
                             ->placeholder('Semua Fasilitas')
                             ->options(fn (): Collection => FasilitasKesehatan::orderBy('nama')->pluck('nama', 'id'))

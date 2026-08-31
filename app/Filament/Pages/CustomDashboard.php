@@ -26,14 +26,14 @@ class CustomDashboard extends Dashboard
         $user = Auth::user();
 
         return match (true) {
-            $user->hasRole('puskesmas') => [
+            $user?->hasRole('puskesmas') => [
                 SelamatDatangWidget::class,
                 InventoryStatsWidget::class,
                 RingkasanWidget::class,
                 PemakaianTerbaruWidget::class,
                 AktivitasTerakhirWidget::class,
             ],
-            $user->hasRole('pustu') => [
+            $user?->hasRole('pustu') => [
                 SelamatDatangWidget::class,
                 InventoryStatsWidget::class,
                 RingkasanWidget::class,

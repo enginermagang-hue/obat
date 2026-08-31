@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\FasilitasKesehatan;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -12,20 +13,20 @@ class UserSeeder extends Seeder
         $users = [
             [
                 'name' => 'Super Admin',
-                'email' => 'superadmin@mail.com',
-                'password' => '123',
+                'email' => 'instalasifarmasi.kabkupang@gmail.com',
+                'password' => '9\ko02.',
                 'role' => 'super_admin',
             ],
             [
                 'name' => 'Admin Gudang',
-                'email' => 'admin_gudang@mail.com',
-                'password' => '123',
+                'email' => 'gudangfarmasi.kabkupang@gmail.com',
+                'password' => '9\ko02.',
                 'role' => 'admin_gudang',
             ],
             [
                 'name' => 'Admin Dinas',
-                'email' => 'admin_dinas@mail.com',
-                'password' => '123',
+                'email' => 'adminfarmasi.kabkupang@gmail.com',
+                'password' => '9\ko02.',
                 'role' => 'admin_dinas',
             ],
         ];
@@ -42,7 +43,28 @@ class UserSeeder extends Seeder
                 ],
             );
 
-            $user->assignRole($role);
+            if (! $user->hasRole($role)) {
+                $user->assignRole($role);
+            }
+        }
+
+        // Seeder puskesmas — 1 akun per puskesmas (idempotent)
+        foreach (FasilitasKesehatan::where('tipe', 'puskesmas')->get() as $faskes) {
+            $email = 'puskesmas.'.$faskes->kode_faskes.'@gmail.com';
+
+            $user = User::firstOrCreate(
+                ['email' => $email],
+                [
+                    'name' => 'Petugas '.$faskes->nama,
+                    'password' => '9\ko02.',
+                    'fasilitas_kesehatan_id' => $faskes->id,
+                    'email_verified_at' => now(),
+                ],
+            );
+
+            if (! $user->hasRole('puskesmas')) {
+                $user->assignRole('puskesmas');
+            }
         }
     }
 }

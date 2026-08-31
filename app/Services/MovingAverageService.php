@@ -27,14 +27,15 @@ class MovingAverageService
         $recent = array_slice($values, -$window);
         $average = (int) round(array_sum($recent) / count($recent));
 
-        // Simple confidence interval based on std deviation
+        // 95% confidence interval: ±1.96 * SD (sample)
         $variance = $this->variance($recent, $average);
-        $stdDev = (int) round(sqrt($variance));
+        $stdDev = sqrt($variance);
+        $margin = (int) round(1.96 * $stdDev);
 
         return [
             'jumlah' => max(0, $average),
-            'confidence_lower' => max(0, $average - $stdDev),
-            'confidence_upper' => $average + $stdDev,
+            'confidence_lower' => max(0, $average - $margin),
+            'confidence_upper' => $average + $margin,
         ];
     }
 
