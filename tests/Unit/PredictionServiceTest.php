@@ -8,6 +8,7 @@ use App\Models\ModelPrediksi;
 use App\Models\Obat;
 use App\Models\PemakaianObat;
 use App\Services\PredictionService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -302,7 +303,14 @@ class PredictionServiceTest extends TestCase
      */
     private function getExpectedMonthlyUsage(int $fasilitasId, int $obatId): array
     {
-        $startDate = now()->subMonths(self::WINDOW_MONTHS)->startOfMonth();
+        // Mirror PredictionService::getMonthlyUsage() logic: anchor on last data date.
+        $lastDate = DB::table('pemakaian_obat')
+            ->where('fasilitas_id', $fasilitasId)
+            ->max('tanggal_pemakaian');
+
+        $anchor = $lastDate ? Carbon::parse($lastDate)->startOfMonth() : now()->copy()->startOfMonth();
+        $end = $anchor;
+        $startDate = $end->copy()->subMonths(self::WINDOW_MONTHS - 1)->startOfMonth();
 
         $bulanExpression = DB::connection()->getDriverName() === 'sqlite'
             ? "strftime('%Y-%m', p.tanggal_pemakaian)"
@@ -322,7 +330,6 @@ class PredictionServiceTest extends TestCase
 
         $filled = [];
         $cursor = $startDate->copy()->startOfMonth();
-        $end = now()->copy()->startOfMonth();
 
         while ($cursor->lte($end)) {
             $key = $cursor->format('Y-m');

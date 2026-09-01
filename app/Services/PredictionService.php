@@ -241,8 +241,9 @@ class PredictionService
             ->max('tanggal_pemakaian');
 
         $anchor = $lastDate ? Carbon::parse($lastDate)->startOfMonth() : now()->copy()->startOfMonth();
-        $nowMonth = now()->copy()->startOfMonth();
-        $end = $anchor->greaterThan($nowMonth) ? $anchor : $nowMonth;
+        // Always anchor the window on the last actual data date so historical imports
+        // (e.g. 2024 data when now is 2026) are fully captured within the 12-month window.
+        $end = $anchor;
         $startDate = $end->copy()->subMonths(self::WINDOW_MONTHS - 1)->startOfMonth();
 
         $bulanExpression = DB::connection()->getDriverName() === 'sqlite'
