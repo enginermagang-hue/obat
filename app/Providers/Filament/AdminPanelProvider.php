@@ -5,8 +5,8 @@ namespace App\Providers\Filament;
 use App\Filament\Backup\BackupsPage;
 use App\Filament\Pages\CustomDashboard;
 use App\Filament\Pages\ImportTabulasiPage;
+use App\Filament\Pages\PrediksiAiPage;
 use App\Filament\Resources\AlokasiDana\AlokasiDanaPage;
-use App\Filament\Resources\DashboardAi\DashboardAiPage;
 use App\Http\Middleware\UpdateUserLastActive;
 use DutchCodingCompany\FilamentSocialite\FilamentSocialitePlugin;
 use DutchCodingCompany\FilamentSocialite\Provider;
@@ -70,7 +70,7 @@ class AdminPanelProvider extends PanelProvider
             ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\Filament\Clusters')
             ->pages([
                 CustomDashboard::class,
-                DashboardAiPage::class,
+                PrediksiAiPage::class,
                 AlokasiDanaPage::class,
                 ImportTabulasiPage::class,
             ])

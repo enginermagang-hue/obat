@@ -141,6 +141,11 @@ class DashboardAiPage extends Page implements HasForms
         return 'dashboard-ai';
     }
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     public static function canAccess(): bool
     {
         return auth()->user()?->hasAnyRole(['super_admin', 'admin_dinas']) ?? false;
