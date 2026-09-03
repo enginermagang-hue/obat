@@ -61,9 +61,6 @@ class SimulasiTransaksiSeeder extends Seeder
     /** @var array<int, array<int, array{batch_id: int, jumlah: int}[]>> batchByGudang[obat_id][] */
     private array $batchByGudang = [];
 
-    /** @var array<int, bool> track which unique batches exist at gudang */
-    private array $gudangBatchExists = [];
-
     /** @var array<int, array<int, int>> snapshot of facility stock at start of each month (LPLPO consistency) */
     private array $faskesStockStartOfMonth = [];
 
@@ -79,9 +76,6 @@ class SimulasiTransaksiSeeder extends Seeder
     private int $counterRetur = 1;
 
     private int $counterRKO = 1;
-
-    /** @var array<int, array{bulan: int, tahun: int}> track months when LPLPO is submitted */
-    private array $faskesLPLPOGenerated = [];
 
     /** @var array<string, int> Stats counters for summary */
     private array $stats = [
@@ -174,6 +168,7 @@ class SimulasiTransaksiSeeder extends Seeder
         $this->call([
             RoleAndPermissionSeeder::class,
             FaskesSeeder::class,
+            UserSeeder::class,
             ObatSeeder::class,
             SupplierSeeder::class,
             SumberDanaSeeder::class,
@@ -183,9 +178,14 @@ class SimulasiTransaksiSeeder extends Seeder
 
         $config = $this->promptUserConfig();
 
+        if (! $config['dry_run'] && $config['truncate_existing']) {
+            $this->truncateSimulasiData();
+        }
+
         $this->loadReferenceData();
         $this->createFaskesUsers();
         $this->initStockTracking();
+        $this->initCountersFromDb();
 
         $startDate = Carbon::parse($config['start_date']);
         $totalMonths = $config['total_months'];
@@ -202,12 +202,18 @@ class SimulasiTransaksiSeeder extends Seeder
         $this->command?->newLine();
 
         $startTime = microtime(true);
-        $output = $this->command->getOutput();
+        $output = $this->command?->getOutput();
 
-        $output->writeln('  ╔═════════════════════════════════════╗');
-        $output->writeln('  ║       Simulasi Transaksi Obat      ║');
-        $output->writeln('  ╚═════════════════════════════════════╝');
-        $output->writeln('');
+        if ($output) {
+            $output->writeln('  ╔═════════════════════════════════════╗');
+            $output->writeln('  ║       Simulasi Transaksi Obat      ║');
+            $output->writeln('  ╚═════════════════════════════════════╝');
+            $output->writeln('');
+        }
+
+        if ($dryRun) {
+            DB::beginTransaction();
+        }
 
         for ($month = 0; $month < $totalMonths; $month++) {
             $date = (clone $startDate)->addMonths($month);
@@ -233,18 +239,30 @@ class SimulasiTransaksiSeeder extends Seeder
                 "    PO: {$penerimaan}  │  SJ: {$distribusi}  │  RQ: {$permintaan}\n".
                 "    LPLPO: {$lplpo}  │  RKO: {$rko}  │  Retur: {$retur}\n";
 
-            if ($month > 0) {
-                $output->write("\e[3A\e[J{$dashboard}");
-            } else {
-                $output->write($dashboard);
+            if ($verbose && $output) {
+                if ($month > 0) {
+                    $output->write("\e[3A\e[J{$dashboard}");
+                } else {
+                    $output->write($dashboard);
+                }
+            } elseif ($output) {
+                // non-verbose: only update on last month
+                if ($month === $totalMonths - 1) {
+                    $output->write($dashboard);
+                }
             }
         }
 
-        $output->writeln('');
+        if ($output) {
+            $output->writeln('');
+        }
 
         $duration = round(microtime(true) - $startTime, 2);
 
-        if (! $dryRun) {
+        if ($dryRun) {
+            DB::rollBack();
+            $this->command?->warn('Dry run: semua perubahan di-rollback (tidak ada data tersimpan).');
+        } else {
             $this->command?->info('Menyimpan stok akhir...');
             $this->persistFinalStock();
         }
@@ -272,6 +290,7 @@ class SimulasiTransaksiSeeder extends Seeder
             'modules' => ['penerimaan', 'distribusi', 'pemakaian', 'permintaan', 'lplpo', 'retur', 'rko'],
             'dry_run' => false,
             'verbose' => true,
+            'truncate_existing' => false,
         ];
 
         if (! $this->command) {
@@ -322,12 +341,18 @@ class SimulasiTransaksiSeeder extends Seeder
                 default: $defaults['verbose'],
             );
 
+            $truncateExisting = confirm(
+                label: 'Hapus data simulasi lama sebelum generate? (truncate)',
+                default: $defaults['truncate_existing'],
+            );
+
             return [
                 'start_date' => $startDateKey,
                 'total_months' => $totalMonths,
                 'modules' => $modules,
                 'dry_run' => $dryRun,
                 'verbose' => $verbose,
+                'truncate_existing' => $truncateExisting,
             ];
         } catch (\Throwable) {
             return $defaults;
@@ -370,7 +395,7 @@ class SimulasiTransaksiSeeder extends Seeder
         $faskesAll = $this->puskesmas->merge($this->pustu);
 
         foreach ($faskesAll as $faskes) {
-            $email = strtolower(str_replace([' ', '.', '-'], '', $faskes->nama)).'@mail.com';
+            $email = 'faskes_'.$faskes->id.'@mail.com';
 
             $user = User::firstOrCreate(
                 ['email' => $email],
@@ -418,6 +443,48 @@ class SimulasiTransaksiSeeder extends Seeder
         }
     }
 
+    private function initCountersFromDb(): void
+    {
+        $maxSJ = DistribusiObat::max('nomor_surat_jalan');
+        if ($maxSJ && preg_match('/(\d{4})$/', $maxSJ, $m)) {
+            $this->counterDistribusi = max($this->counterDistribusi, (int) $m[1] + 1);
+        }
+        $maxPO = PenerimaanStok::max('nomor_penerimaan');
+        if ($maxPO && preg_match('/(\d{4})$/', $maxPO, $m)) {
+            $this->counterPenerimaan = max($this->counterPenerimaan, (int) $m[1] + 1);
+        }
+        $maxRQ = PermintaanObat::max('nomor_permintaan');
+        if ($maxRQ && preg_match('/(\d{4})$/', $maxRQ, $m)) {
+            $this->counterPermintaan = max($this->counterPermintaan, (int) $m[1] + 1);
+        }
+        // LPLPO, RKO, Retur checked similarly if needed
+        $maxLPLPO = LaporanLplpo::max('id');
+        if ($maxLPLPO) {
+            $this->counterLPLPO = max($this->counterLPLPO, $maxLPLPO + 1);
+        }
+        $maxRKO = LaporanRko::max('id');
+        if ($maxRKO) {
+            $this->counterRKO = max($this->counterRKO, $maxRKO + 1);
+        }
+        $maxRetur = ReturObat::max('id');
+        if ($maxRetur) {
+            $this->counterRetur = max($this->counterRetur, $maxRetur + 1);
+        }
+    }
+
+    private function truncateSimulasiData(): void
+    {
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        foreach (['detail_retur_obat', 'retur_obat', 'detail_rko', 'laporan_rko', 'detail_lplpo', 'laporan_lplpo', 'detail_permintaan_obat', 'permintaan_obat', 'detail_pemakaian_obat', 'pemakaian_obat', 'detail_distribusi_obat', 'distribusi_obat', 'detail_penerimaan_stok', 'penerimaan_stok', 'riwayat_stok', 'sumber_dana_penggunaan'] as $table) {
+            try {
+                DB::table($table)->truncate();
+            } catch (\Throwable $e) {
+            }
+        }
+        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        $this->command?->info('Data simulasi lama di-truncate.');
+    }
+
     private function initStockTracking(): void
     {
         // Load initial gudang stock
@@ -428,19 +495,22 @@ class SimulasiTransaksiSeeder extends Seeder
             // Pick sumber dana per-batch (so init stock follows 70/20/10 distribution instead of all-or-nothing)
             $sumberDanaAwal = $this->pickSumberDana(2024);
 
-            // Create REAL batch records for initial stock (avoids FK issues)
-            $batch = BatchStok::create([
-                'penerimaan_id' => null,
-                'fasilitas_id' => null,
-                'sumber_dana_id' => $sumberDanaAwal->id,
-                'obat_id' => $sg->obat_id,
-                'batch_number' => 'INIT/'.str_pad((string) $sg->obat_id, 3, '0', STR_PAD_LEFT).'/JUN2024',
-                'tanggal_expired' => '2026-12-31',
-                'jumlah' => (int) $sg->jumlah,
-                'status' => 'tersedia',
-                'tanggal_masuk' => '2024-06-01',
-                'harga_beli' => 0,
-            ]);
+            // Create REAL batch records for initial stock (idempotent via batch_number)
+            $batchNumberInit = 'INIT/'.str_pad((string) $sg->obat_id, 3, '0', STR_PAD_LEFT).'/JUN2024';
+            $batch = BatchStok::firstOrCreate(
+                ['batch_number' => $batchNumberInit],
+                [
+                    'penerimaan_id' => null,
+                    'fasilitas_id' => null,
+                    'sumber_dana_id' => $sumberDanaAwal->id,
+                    'obat_id' => $sg->obat_id,
+                    'tanggal_expired' => '2026-12-31',
+                    'jumlah' => (int) $sg->jumlah,
+                    'status' => 'tersedia',
+                    'tanggal_masuk' => '2024-06-01',
+                    'harga_beli' => 0,
+                ]
+            );
 
             $this->batchByGudang[$sg->obat_id] = [[
                 'batch_id' => $batch->id,
@@ -793,12 +863,12 @@ class SimulasiTransaksiSeeder extends Seeder
                 $stokSebelum = $this->faskesStock[$faskes->id][$obatId] ?? 0;
                 $this->faskesStock[$faskes->id][$obatId] = $stokSebelum - $dayQty;
 
-                // 4. Create riwayat (polymorphic ref → DetailPemakaianObat)
+                // 4. Create riwayat (polymorphic ref → DetailPemakaianObat) - konsisten negatif untuk keluar
                 RiwayatStok::create([
                     'fasilitas_id' => $faskes->id,
                     'obat_id' => $obatId,
                     'tipe' => 'keluar',
-                    'jumlah' => $dayQty,
+                    'jumlah' => -$dayQty,
                     'stok_sebelum' => $stokSebelum,
                     'stok_sesudah' => $stokSebelum - $dayQty,
                     'referensi_type' => DetailPemakaianObat::class,
@@ -855,7 +925,7 @@ class SimulasiTransaksiSeeder extends Seeder
         $batches = array_values(array_filter($batches, fn ($b) => $b['jumlah'] > 0));
         $this->batchByFaskes[$fasilitasId][$obatId] = $batches;
 
-        return ['batch_id' => $lastBatchId, 'sisa' => $remaining];
+        return ['batch_id' => $lastBatchId];
     }
 
     private function randomDiagnosa(): string
@@ -899,9 +969,9 @@ class SimulasiTransaksiSeeder extends Seeder
 
     private function generatePermintaan(int $pengirimId, ?int $tujuanId, string $tipe, Carbon $date): void
     {
-        $stok = $tipe === 'pustu_ke_puskesmas' ? ($this->faskesStock[$pengirimId] ?? []) : ($this->faskesStock[$pengirimId] ?? []);
+        $stok = $this->faskesStock[$pengirimId] ?? [];
 
-        // Drugs with stock below threshold need restocking
+        // Drugs with stock below threshold need restocking (includes depleted)
         $obatButuh = [];
         foreach ($stok as $obatId => $jumlah) {
             if ($jumlah < $this->getStokMinimum($obatId, $pengirimId)) {
@@ -909,17 +979,8 @@ class SimulasiTransaksiSeeder extends Seeder
             }
         }
 
-        // Also request some drugs that are depleted (0 stock)
-        $depleted = [];
-        foreach ($this->faskesStock[$pengirimId] ?? [] as $obatId => $jumlah) {
-            if ($jumlah <= 0) {
-                $depleted[] = $obatId;
-            }
-        }
-
         $allRequested = array_unique(array_merge(
             $obatButuh,
-            $depleted,
             // Add some random drugs to simulate normal request
             $this->obatList->random(min(random_int(2, 6), $this->obatList->count()))->pluck('id')->toArray(),
         ));
@@ -1054,11 +1115,27 @@ class SimulasiTransaksiSeeder extends Seeder
             return;
         }
 
+        // Pre-filter with qtyMap to avoid double random calc
+        $qtyMap = [];
+        foreach ($obatIds as $obatId) {
+            $avgCons = $this->getAvgConsumption($obatId, $penerimaId);
+            $currentStock = $this->faskesStock[$penerimaId][$obatId] ?? 0;
+            $qty = max(50, (int) ($avgCons * random_int(15, 30) / 10) - $currentStock);
+            $sourceStock = $pengirimId === null ? ($this->gudangStock[$obatId] ?? 0) : ($this->faskesStock[$pengirimId][$obatId] ?? 0);
+            $qty = min($qty, $sourceStock);
+            if ($qty > 0) {
+                $qtyMap[$obatId] = $qty;
+            }
+        }
+        if (empty($qtyMap)) {
+            return;
+        }
+
         $adminGudang = $this->users['sys_admin_gudang@mail.com'];
         $adminDinas = $this->users['sys_admin_dinas@mail.com'];
         $tanggalKirim = (clone $date)->addDays(random_int(10, 25));
 
-        // Create the distribution header
+        // Create the distribution header (only after confirming at least one obat can be sent)
         $distribusi = DistribusiObat::create([
             'nomor_surat_jalan' => 'SJ/'.$date->format('Y/m').'/'.str_pad((string) $this->counterDistribusi++, 4, '0', STR_PAD_LEFT),
             'permintaan_id' => null,
@@ -1074,125 +1151,66 @@ class SimulasiTransaksiSeeder extends Seeder
         ]);
 
         $sumberDanaAlokasi = [];
+        $detailCount = 0;
 
-        foreach ($obatIds as $obatId) {
-            // Determine qty to send based on estimated need
-            $avgCons = $this->getAvgConsumption($obatId, $penerimaId);
-            $currentStock = $this->faskesStock[$penerimaId][$obatId] ?? 0;
-            // Send 1.5-3 months of supply minus current stock
-            $qty = max(50, (int) ($avgCons * random_int(15, 30) / 10) - $currentStock);
-
-            // Check source stock
-            $sourceStock = $pengirimId === null
-                ? ($this->gudangStock[$obatId] ?? 0)
-                : ($this->faskesStock[$pengirimId][$obatId] ?? 0);
-
-            if ($qty > $sourceStock) {
-                $qty = max(0, $sourceStock);
-            }
+        foreach ($qtyMap as $obatId => $qty) {
+            // Validate batch before mutating stock/riwayat
+            $sourceStock = $pengirimId === null ? ($this->gudangStock[$obatId] ?? 0) : ($this->faskesStock[$pengirimId][$obatId] ?? 0);
+            $qty = min($qty, $sourceStock);
             if ($qty <= 0) {
                 continue;
             }
-
-            // Deduct from source
-            if ($pengirimId === null) {
-                // From gudang
-                $stokSebelum = $this->gudangStock[$obatId] ?? 0;
-                $this->gudangStock[$obatId] = $stokSebelum - $qty;
-
-                // Pick batch
-                $batchId = $this->deductGudangBatch($obatId, $qty);
-
-                // Add to faskes stock
-                $this->faskesStock[$penerimaId][$obatId] = ($this->faskesStock[$penerimaId][$obatId] ?? 0) + $qty;
-
-                // Track batch at faskes
-                if ($batchId) {
-                    $this->batchByFaskes[$penerimaId][$obatId][] = [
-                        'batch_id' => $batchId,
-                        'jumlah' => $qty,
-                    ];
-                }
-
-                RiwayatStok::create([
-                    'fasilitas_id' => null,
-                    'obat_id' => $obatId,
-                    'tipe' => 'distribusi_keluar',
-                    'jumlah' => -$qty,
-                    'stok_sebelum' => $stokSebelum,
-                    'stok_sesudah' => $stokSebelum - $qty,
-                    'referensi_type' => DistribusiObat::class,
-                    'referensi_id' => $distribusi->id,
-                    'user_id' => $adminGudang->id,
-                    'keterangan' => 'Distribusi ke faskes',
-                    'tanggal' => $tanggalKirim,
-                ]);
-            } else {
-                // From puskesmas to pustu
-                $stokSebelum = $this->faskesStock[$pengirimId][$obatId] ?? 0;
-                $this->faskesStock[$pengirimId][$obatId] = $stokSebelum - $qty;
-                $this->faskesStock[$penerimaId][$obatId] = ($this->faskesStock[$penerimaId][$obatId] ?? 0) + $qty;
-
-                // Move batch
-                $batchId = $this->deductFacilityBatch($pengirimId, $obatId, $qty);
-                if ($batchId) {
-                    $this->batchByFaskes[$penerimaId][$obatId][] = [
-                        'batch_id' => $batchId,
-                        'jumlah' => $qty,
-                    ];
-                }
-
-                RiwayatStok::create([
-                    'fasilitas_id' => $pengirimId,
-                    'obat_id' => $obatId,
-                    'tipe' => 'distribusi_keluar',
-                    'jumlah' => -$qty,
-                    'stok_sebelum' => $stokSebelum,
-                    'stok_sesudah' => $stokSebelum - $qty,
-                    'referensi_type' => DistribusiObat::class,
-                    'referensi_id' => $distribusi->id,
-                    'user_id' => $this->users[$pengirimId]->id ?? $adminGudang->id,
-                    'keterangan' => 'Distribusi ke '.($this->pustu->firstWhere('id', $penerimaId)?->nama ?? 'Pustu'),
-                    'tanggal' => $tanggalKirim,
-                ]);
-            }
-
-            // Riwayat masuk untuk penerima
-            $stokPenerimaSebelum = ($this->faskesStock[$penerimaId][$obatId] ?? 0) - $qty;
-
-            RiwayatStok::create([
-                'fasilitas_id' => $penerimaId,
-                'obat_id' => $obatId,
-                'tipe' => 'distribusi_masuk',
-                'jumlah' => $qty,
-                'stok_sebelum' => $stokPenerimaSebelum,
-                'stok_sesudah' => $stokPenerimaSebelum + $qty,
-                'referensi_type' => DistribusiObat::class,
-                'referensi_id' => $distribusi->id,
-                'user_id' => $this->users[$penerimaId]?->id ?? $adminDinas->id,
-                'keterangan' => 'Penerimaan distribusi',
-                'tanggal' => $tanggalKirim,
-            ]);
-
-            // Detail distribusi
+            $batchId = $pengirimId === null ? $this->deductGudangBatch($obatId, $qty) : $this->deductFacilityBatch($pengirimId, $obatId, $qty);
             $finalBatchId = $batchId ?? 0;
-            if ($finalBatchId <= 0) {
-                $finalBatchId = BatchStok::where('obat_id', $obatId)
-                    ->where('fasilitas_id', $pengirimId)
-                    ->value('id') ?? 0;
-            }
             if ($finalBatchId <= 0) {
                 continue;
             }
+
+            // Deduct from source + add to penerima after batch validated
+            if ($pengirimId === null) {
+                $stokSebelum = $this->gudangStock[$obatId] ?? 0;
+                $this->gudangStock[$obatId] = $stokSebelum - $qty;
+                $this->faskesStock[$penerimaId][$obatId] = ($this->faskesStock[$penerimaId][$obatId] ?? 0) + $qty;
+                $this->batchByFaskes[$penerimaId][$obatId][] = ['batch_id' => $batchId, 'jumlah' => $qty];
+                RiwayatStok::create([
+                    'fasilitas_id' => null, 'obat_id' => $obatId, 'tipe' => 'distribusi_keluar', 'jumlah' => -$qty,
+                    'stok_sebelum' => $stokSebelum, 'stok_sesudah' => $stokSebelum - $qty,
+                    'referensi_type' => DistribusiObat::class, 'referensi_id' => $distribusi->id,
+                    'user_id' => $adminGudang->id, 'keterangan' => 'Distribusi ke faskes', 'tanggal' => $tanggalKirim,
+                ]);
+            } else {
+                $stokSebelum = $this->faskesStock[$pengirimId][$obatId] ?? 0;
+                $this->faskesStock[$pengirimId][$obatId] = $stokSebelum - $qty;
+                $this->faskesStock[$penerimaId][$obatId] = ($this->faskesStock[$penerimaId][$obatId] ?? 0) + $qty;
+                $this->batchByFaskes[$penerimaId][$obatId][] = ['batch_id' => $batchId, 'jumlah' => $qty];
+                RiwayatStok::create([
+                    'fasilitas_id' => $pengirimId, 'obat_id' => $obatId, 'tipe' => 'distribusi_keluar', 'jumlah' => -$qty,
+                    'stok_sebelum' => $stokSebelum, 'stok_sesudah' => $stokSebelum - $qty,
+                    'referensi_type' => DistribusiObat::class, 'referensi_id' => $distribusi->id,
+                    'user_id' => $this->users[$pengirimId]->id ?? $adminGudang->id,
+                    'keterangan' => 'Distribusi ke '.($this->pustu->firstWhere('id', $penerimaId)?->nama ?? 'Pustu'), 'tanggal' => $tanggalKirim,
+                ]);
+            }
+
+            $stokPenerimaSebelum = ($this->faskesStock[$penerimaId][$obatId] ?? 0) - $qty;
+            RiwayatStok::create([
+                'fasilitas_id' => $penerimaId, 'obat_id' => $obatId, 'tipe' => 'distribusi_masuk', 'jumlah' => $qty,
+                'stok_sebelum' => $stokPenerimaSebelum, 'stok_sesudah' => $stokPenerimaSebelum + $qty,
+                'referensi_type' => DistribusiObat::class, 'referensi_id' => $distribusi->id,
+                'user_id' => $this->users[$penerimaId]?->id ?? $adminDinas->id, 'keterangan' => 'Penerimaan distribusi', 'tanggal' => $tanggalKirim,
+            ]);
+
+            // Detail distribusi — batch_id must always be valid
             DetailDistribusiObat::create([
                 'distribusi_id' => $distribusi->id,
                 'obat_id' => $obatId,
                 'batch_id' => $finalBatchId,
                 'jumlah' => $qty,
             ]);
+            $detailCount++;
 
-            // Update batch_stok for faskes if from gudang
-            if ($pengirimId === null && $finalBatchId > 0) {
+            // Update batch_stok for faskes (create faskes batch from source batch)
+            if ($finalBatchId > 0) {
                 $batch = BatchStok::find($finalBatchId);
                 if ($batch) {
                     BatchStok::create([
@@ -1225,6 +1243,12 @@ class SimulasiTransaksiSeeder extends Seeder
                     $sumberDanaAlokasi[$sdId]['total_biaya'] += $biaya;
                 }
             }
+        }
+
+        if ($detailCount === 0) {
+            $distribusi->delete();
+
+            return;
         }
 
         // Catat alokasi dana ke faskes
@@ -1322,6 +1346,9 @@ class SimulasiTransaksiSeeder extends Seeder
 
         $tglBuat = (clone $date)->endOfMonth();
 
+        if (LaporanLplpo::where('fasilitas_id', $fasilitasId)->where('periode_bulan', $date->month)->where('periode_tahun', $date->year)->exists()) {
+            return;
+        }
         $lplpo = LaporanLplpo::create([
             'nomor_laporan' => 'LPLPO/'.$date->format('Y/m').'/'.str_pad((string) $this->counterLPLPO++, 4, '0', STR_PAD_LEFT),
             'fasilitas_id' => $fasilitasId,
@@ -1341,7 +1368,7 @@ class SimulasiTransaksiSeeder extends Seeder
         foreach ($drugsWithMovement as $obat) {
             $stokAwal = (int) ($this->faskesStockStartOfMonth[$fasilitasId][$obat->id]
                 ?? $this->faskesStock[$fasilitasId][$obat->id]
-                ?? random_int(50, 500));
+                ?? 0);
 
             // Query actual stock movements for this month
             $masuk = (int) RiwayatStok::query()
@@ -1436,6 +1463,9 @@ class SimulasiTransaksiSeeder extends Seeder
             ->latest()
             ->first();
 
+        if (LaporanRko::where('fasilitas_id', $fasilitasId)->where('periode_tahun', $tahunRko)->exists()) {
+            return;
+        }
         $rko = LaporanRko::create([
             'nomor_rko' => 'RKO/'.$date->format('Y/m').'/'.str_pad((string) $this->counterRKO++, 4, '0', STR_PAD_LEFT),
             'fasilitas_id' => $fasilitasId,

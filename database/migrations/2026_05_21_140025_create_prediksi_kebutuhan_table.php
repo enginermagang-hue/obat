@@ -21,7 +21,7 @@ return new class extends Migration
             $table->integer('jumlah_prediksi');
             $table->integer('confidence_lower')->nullable();
             $table->integer('confidence_upper')->nullable();
-            $table->enum('metode', ['ai_gradient_boost', 'ai_random_forest', 'moving_average', 'manual']);
+            $table->enum('metode', ['ai_gradient_boost', 'ai_random_forest', 'moving_average', 'manual', 'ann_php']);
             $table->foreignId('dibuat_oleh')->nullable()->constrained('users')->nullOnDelete();
             $table->text('catatan')->nullable();
             $table->timestamps();

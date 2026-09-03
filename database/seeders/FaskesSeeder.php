@@ -35,7 +35,7 @@ class FaskesSeeder extends Seeder
         // ];
 
         foreach ($puskesmasList as $data) {
-            FasilitasKesehatan::firstOrCreate(
+            FasilitasKesehatan::updateOrCreate(
                 ['kode_faskes' => $data['kode_faskes']],
                 $data,
             );

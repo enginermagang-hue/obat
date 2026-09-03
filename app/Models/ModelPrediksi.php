@@ -17,7 +17,10 @@ class ModelPrediksi extends Model
         'fasilitas_id',
         'obat_id',
         'model_data',
+        'model_path',
         'akurasi_r2',
+        'mae',
+        'mape',
         'tanggal_training',
         'data_training_count',
         'fitur_digunakan',
@@ -29,6 +32,8 @@ class ModelPrediksi extends Model
     {
         return [
             'akurasi_r2' => 'decimal:4',
+            'mae' => 'decimal:2',
+            'mape' => 'decimal:2',
             'tanggal_training' => 'date',
             'data_training_count' => 'integer',
             'fitur_digunakan' => 'array',

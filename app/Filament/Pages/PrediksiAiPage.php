@@ -40,21 +40,47 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
 
     public ?int $tahun = null;
 
-    /** @var string secondary table identifier for model table */
     public string $activeSection = 'prediksi';
 
     protected $queryString = ['fasilitas_id', 'obat_id', 'bulan', 'tahun'];
 
     public function mount(): void
     {
-        $this->bulan ??= now()->month;
-        $this->tahun ??= now()->year;
+        // Default to latest periode with data (next-month predictions), not now() which has no predictions yet
+        if ($this->bulan === null || $this->tahun === null) {
+            $latest = PrediksiKebutuhan::query()
+                ->selectRaw('MAX(CONCAT(LPAD(periode_tahun,4,"0"), "-", LPAD(periode_bulan,2,"0"))) as max_periode')
+                ->value('max_periode');
+            if ($latest) {
+                [$y, $m] = explode('-', $latest);
+                $this->tahun = $this->tahun ?? (int) $y;
+                $this->bulan = $this->bulan ?? (int) $m;
+            } else {
+                $this->bulan ??= now()->month;
+                $this->tahun ??= now()->year;
+            }
+        }
         $this->form->fill([
             'fasilitas_id' => $this->fasilitas_id,
             'obat_id' => $this->obat_id,
             'bulan' => $this->bulan,
             'tahun' => $this->tahun,
         ]);
+    }
+
+    public function getHasPrediksiData(): bool
+    {
+        return PrediksiKebutuhan::exists();
+    }
+
+    public function getNearestPeriode(): ?string
+    {
+        $row = PrediksiKebutuhan::orderBy('periode_tahun')->orderBy('periode_bulan')->first(['periode_bulan', 'periode_tahun']);
+        if (! $row) {
+            return null;
+        }
+
+        return Carbon::create($row->periode_tahun, $row->periode_bulan)->translatedFormat('F Y');
     }
 
     public function form(Schema $schema): Schema
@@ -74,17 +100,18 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
         }
     }
 
-    // Stats computed for view
     public function getStats(): array
     {
-        $modelQuery = ModelPrediksi::query()->when($this->fasilitas_id, fn (Builder $q) => $q->where('fasilitas_id', $this->fasilitas_id));
+        $modelQuery = ModelPrediksi::query()->when($this->fasilitas_id, fn (Builder $q) => $q->where('fasilitas_id', $this->fasilitas_id))->when($this->obat_id, fn (Builder $q) => $q->where('obat_id', $this->obat_id));
         $prediksiQuery = PrediksiKebutuhan::query()->when($this->fasilitas_id, fn (Builder $q) => $q->where('fasilitas_id', $this->fasilitas_id));
 
         return [
             'model_aktif' => (clone $modelQuery)->where('status', 'aktif')->count(),
             'obat_diprediksi' => (clone $prediksiQuery)->where('periode_bulan', $this->bulan)->where('periode_tahun', $this->tahun)->distinct('obat_id')->count('obat_id'),
             'rata_akurasi' => (clone $modelQuery)->where('status', 'aktif')->whereNotNull('akurasi_r2')->avg('akurasi_r2'),
-            'faskes_terlatih' => (clone $modelQuery)->distinct('fasilitas_id')->count('fasilitas_id'),
+            'rata_mae' => (clone $modelQuery)->where('status', 'aktif')->whereNotNull('mae')->avg('mae'),
+            'rata_mape' => (clone $modelQuery)->where('status', 'aktif')->whereNotNull('mape')->avg('mape'),
+            'faskes_terlatih' => (clone $modelQuery)->where('status', 'aktif')->distinct('fasilitas_id')->count('fasilitas_id'),
         ];
     }
 
@@ -116,8 +143,6 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
 
     public function table(Table $table): Table
     {
-        // Single table showing Hasil Prediksi; Model table rendered separately via second table method or view loop
-        // Filament HasTable supports one table; we use prediksi table as main and render model table as blade partial via getModelRecords()
         return $table
             ->query(
                 PrediksiKebutuhan::query()->with(['fasilitas', 'obat', 'model'])
@@ -126,6 +151,9 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
                     ->when($this->bulan, fn (Builder $q) => $q->where('periode_bulan', $this->bulan))
                     ->when($this->tahun, fn (Builder $q) => $q->where('periode_tahun', $this->tahun))
             )
+            ->emptyStateHeading('Belum ada prediksi untuk filter ini')
+            ->emptyStateDescription(fn () => $this->getHasPrediksiData() ? 'Coba ubah filter Bulan/Tahun ke '.$this->getNearestPeriode().' atau jalankan php artisan ai:train-models --force.' : 'Belum ada data prediksi sama sekali. Jalankan php artisan ai:train-models --force.')
+            ->emptyStateIcon('heroicon-o-exclamation-triangle')
             ->columns([
                 TextColumn::make('fasilitas.nama')->label('Fasilitas')->searchable()->sortable(),
                 TextColumn::make('obat.nama_obat')->label('Obat')->searchable()->sortable(),
@@ -133,9 +161,9 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
                 TextColumn::make('jumlah_prediksi')->label('Prediksi')->sortable()->weight('bold'),
                 TextColumn::make('confidence_lower')->label('CI')->formatStateUsing(fn ($record) => $record->confidence_lower.' – '.$record->confidence_upper)->toggleable(),
                 TextColumn::make('metode')->badge()->color(fn (string $state): string => match ($state) {
-                    'ai_gradient_boost' => 'success', 'moving_average' => 'warning', default => 'gray'
+                    'ann_php' => 'info', 'ai_gradient_boost' => 'success', 'moving_average' => 'warning', default => 'gray'
                 })->formatStateUsing(fn (string $state): string => match ($state) {
-                    'ai_gradient_boost' => 'AI', 'moving_average' => 'MA', default => $state
+                    'ann_php' => 'ANN', 'ai_gradient_boost' => 'AI', 'moving_average' => 'MA', default => $state
                 }),
                 TextColumn::make('model.akurasi_r2')->label('Akurasi')->formatStateUsing(fn ($state) => $state !== null ? number_format((float) $state * 100, 1).'%' : '-'),
             ])
@@ -156,7 +184,15 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
         $record = ModelPrediksi::findOrFail($modelId);
         $exit = Artisan::call('ai:train-models', ['--fasilitas-id' => $record->fasilitas_id, '--obat-id' => $record->obat_id, '--force' => true]);
         $exit === 0
-            ? Notification::make()->title('Training berhasil')->success()->send()
+            ? Notification::make()->title('Training berhasil (ANN per faskes+obat)')->success()->send()
+            : Notification::make()->title('Training gagal')->body(Artisan::output())->danger()->send();
+    }
+
+    public function trainAll(): void
+    {
+        $exit = Artisan::call('ai:train-models', ['--force' => true]);
+        $exit === 0
+            ? Notification::make()->title('Training semua faskes+obat berhasil')->success()->send()
             : Notification::make()->title('Training gagal')->body(Artisan::output())->danger()->send();
     }
 

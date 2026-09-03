@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use App\Models\FasilitasKesehatan;
 use App\Models\ModelPrediksi;
 use App\Models\Obat;
-use App\Services\PredictionService;
+use App\Services\PhpAnnPredictionService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
@@ -18,21 +18,15 @@ class AiTrainModels extends Command
         {--obat-id= : Only train for a specific drug ID}
         {--force : Retrain even if model is already active}';
 
-    protected $description = 'Train AI prediction models for all facility+drug combinations';
+    protected $description = 'Train AI prediction models per faskes+obat (ANN 9-12-8-1)';
 
-    /**
-     * How many facility+drug combinations we process at once via lazy chunking.
-     */
     private const CHUNK_SIZE = 50;
 
-    /**
-     * Maximum combinations to process in one run (selaras docs: 500).
-     */
     private const MAX_COMBINATIONS = 500;
 
-    public function handle(PredictionService $predictionService): int
+    public function handle(PhpAnnPredictionService $predictionService): int
     {
-        $this->info('Starting AI model training...');
+        $this->info('Starting AI model training (ANN per faskes+obat)...');
         $startTime = microtime(true);
 
         $processed = 0;
@@ -73,7 +67,6 @@ class AiTrainModels extends Command
                     continue;
                 }
 
-                // Skip if model exists and is active (unless --force)
                 if (! $this->option('force')) {
                     $existing = ModelPrediksi::where('fasilitas_id', $faskes->id)
                         ->where('obat_id', $obat->id)
@@ -82,18 +75,15 @@ class AiTrainModels extends Command
 
                     if ($existing) {
                         $processed++;
-
                         $progressBar->advance();
 
                         continue;
                     }
                 }
 
-                // Train model
                 $model = $predictionService->train($faskes, $obat);
                 $trained++;
 
-                // Generate predictions for active or data_belum_cukup models
                 if (in_array($model->status, ['aktif', 'data_belum_cukup'], true)) {
                     $predictions = $predictionService->generatePredictions($model);
                     $predictionsGenerated += $predictions->count();
@@ -126,9 +116,6 @@ class AiTrainModels extends Command
         return self::SUCCESS;
     }
 
-    /**
-     * Build base query for distinct facility + drug combinations.
-     */
     private function buildCombinationsQuery(): Builder
     {
         $query = DB::table('detail_pemakaian_obat as d')
@@ -146,11 +133,6 @@ class AiTrainModels extends Command
         return $query;
     }
 
-    /**
-     * Get distinct facility + drug combinations that have usage data.
-     *
-     * @return Collection<int, object{fasilitas_id: int, obat_id: int}>
-     */
     private function getCombinations(): Collection
     {
         return $this->buildCombinationsQuery()->get();
