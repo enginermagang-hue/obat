@@ -138,16 +138,29 @@ class CreateLaporanRko extends CreateRecord implements HasSchemas, HasTable
                 ->icon('heroicon-o-sparkles')
                 ->color('info')
                 ->requiresConfirmation()
-                ->modalDescription('Generate akan mengisi item RKO dari prediksi AI/MA obat. Item yang sudah ada akan ditimpa. Obat tanpa prediksi akan diisi 0.')
+                ->modalHeading('Generate dari Prediksi AI')
+                ->modalDescription('Akan mengisi item RKO dari **rata-rata 3 bulan prediksi** per obat (ANN / Moving Average) untuk tahun RKO. Rumus Kemenkes ×18 + buffer VEN tetap dipakai. Item yang sudah ada akan ditimpa. Obat tanpa prediksi akan diisi 0 — silakan edit manual. Prediksi puskesmas mencakup pustu binaan.')
                 ->action(function (): void {
                     $this->generateFromPrediksi();
 
                     $total = count($this->details);
                     $withPrediksi = collect($this->details)->where('prediksi_id', '!==', null)->count();
+                    $withoutPrediksi = $total - $withPrediksi;
+                    $avgNote = $withPrediksi > 0 ? ' (rata-rata 3 bln)' : '';
+
+                    $body = "{$total} item obat ({$withPrediksi} dari prediksi{$avgNote})";
+                    if ($withoutPrediksi > 0) {
+                        $body .= ". {$withoutPrediksi} obat tanpa prediksi diisi 0 — silakan cek Manual/MA.";
+                    }
+                    // Warning for stale models
+                    $staleCount = collect($this->details)->filter(fn ($d) => str_contains($d['keterangan'] ?? '', 'kadaluarsa') || str_contains($d['keterangan'] ?? '', 'gagal'))->count();
+                    if ($staleCount > 0) {
+                        $body .= " ⚠ {$staleCount} model kadaluarsa/gagal.";
+                    }
 
                     Notification::make()
                         ->title('Berhasil di-generate')
-                        ->body("{$total} item obat ({$withPrediksi} dari prediksi)")
+                        ->body($body)
                         ->success()
                         ->send();
                 }),

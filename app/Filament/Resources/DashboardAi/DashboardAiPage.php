@@ -148,6 +148,6 @@ class DashboardAiPage extends Page implements HasForms
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->hasAnyRole(['super_admin', 'admin_dinas']) ?? false;
+        return auth()->user()?->hasPermissionTo('view_prediksi_kebutuhan') ?? false;
     }
 }

@@ -8,10 +8,10 @@ use App\Http\Controllers\CetakNeracaController;
 use App\Http\Controllers\CetakObatExcelController;
 use App\Http\Controllers\CetakPermintaanController;
 use App\Http\Controllers\CetakPermintaanExcelController;
+use App\Http\Controllers\CetakPrediksiExcelController;
 use App\Http\Controllers\CetakRkoController;
 use App\Http\Controllers\CustomAuthController;
 use App\Http\Controllers\DownloadSuratPermintaanController;
-use App\Http\Controllers\DownloadTemplatePrediksiController;
 use App\Http\Controllers\GoogleSocialiteController;
 use App\Http\Controllers\PanduanController;
 use Illuminate\Support\Facades\Route;
@@ -72,8 +72,8 @@ Route::middleware('web')->group(function () {
         ->name('admin.obat.cetak-xls')
         ->middleware('auth');
 
-    Route::get('/admin/template/prediksi-wide', DownloadTemplatePrediksiController::class)
-        ->name('admin.template.prediksi-wide')
+    Route::get('/admin/prediksi/cetak-xls', CetakPrediksiExcelController::class)
+        ->name('admin.prediksi.cetak-xls')
         ->middleware('auth');
 
     Route::get('/admin/lplpo/{lplpo}/cetak-pdf', CetakLplpoController::class)

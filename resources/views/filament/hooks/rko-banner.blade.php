@@ -3,6 +3,14 @@
     $user = \Illuminate\Support\Facades\Auth::user();
     $needsRko = $user ? $service->userNeedsRko($user) : false;
     $isRkoPage = request()->is('admin/rko*');
+    $hasPrediksiAccess = $user?->hasPermissionTo('view_prediksi_kebutuhan');
+    $prediksiCount = 0;
+    if ($user && $hasPrediksiAccess && filled($user->fasilitas_kesehatan_id)) {
+        $periode = $service->getPeriodeTahun($user);
+        if (filled($periode)) {
+            $prediksiCount = \App\Models\PrediksiKebutuhan::where('fasilitas_id', $user->fasilitas_kesehatan_id)->where('periode_tahun', (int) $periode)->count();
+        }
+    }
 @endphp
 
 @if($needsRko && !$isRkoPage)
@@ -37,6 +45,15 @@
                 </p>
             </div>
             <div class="flex items-center gap-2 flex-shrink-0">
+                @if($hasPrediksiAccess)
+                    <a
+                        href="{{ \App\Filament\Pages\PrediksiAiPage::getUrl(['fasilitas_id' => $user->fasilitas_kesehatan_id, 'tahun' => $service->getPeriodeTahun($user)]) }}"
+                        class="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-amber-700 shadow-sm ring-1 ring-inset ring-amber-300 hover:bg-amber-50 dark:bg-amber-900/30 dark:text-amber-200 dark:ring-amber-700 transition-colors"
+                    >
+                        <x-heroicon-o-cpu-chip class="h-4 w-4" />
+                        Lihat Prediksi{{ $prediksiCount ? " ($prediksiCount)" : '' }}
+                    </a>
+                @endif
                 <a
                     href="{{ \App\Filament\Resources\LaporanRkos\LaporanRkoResource::getUrl('create') }}"
                     class="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 transition-colors"

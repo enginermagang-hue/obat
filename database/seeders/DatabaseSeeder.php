@@ -21,7 +21,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             SupplierSeeder::class,
             ObatSeeder::class,
-            SumberDanaSeeder::class,
+            // SumberDanaSeeder::class,
             // StokGudangSeeder::class,
             // SimulasiTransaksiSeeder::class,
         ]);

@@ -2,57 +2,100 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Resources\PermintaanObats\PermintaanObatResource;
 use App\Models\FasilitasKesehatan;
 use App\Models\ModelPrediksi;
 use App\Models\Obat;
+use App\Models\PermintaanObat;
 use App\Models\PrediksiKebutuhan;
+use App\Models\User;
+use App\Services\BuatPermintaanService;
+use App\Services\PrediksiRekomendasiService;
+use App\Services\RkoAccessCheckService;
 use BackedEnum;
 use Carbon\Carbon;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Concerns\InteractsWithTable;
-use Filament\Tables\Contracts\HasTable;
-use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 use UnitEnum;
 
-class PrediksiAiPage extends Page implements HasForms, HasTable
+class PrediksiAiPage extends Page implements HasForms
 {
     use InteractsWithForms;
-    use InteractsWithTable;
 
     protected string $view = 'filament.pages.prediksi-ai';
 
     public ?int $fasilitas_id = null;
 
-    public ?int $obat_id = null;
+    public ?string $kategori = null;
+
+    public ?string $cari = null;
 
     public ?int $bulan = null;
 
     public ?int $tahun = null;
 
+    public int $horizon = 3;
+
+    public int $page = 1;
+
+    public ?int $detailObatId = null;
+
     public string $activeSection = 'prediksi';
 
-    protected $queryString = ['fasilitas_id', 'obat_id', 'bulan', 'tahun'];
+    protected $queryString = ['fasilitas_id', 'kategori', 'cari', 'bulan', 'tahun', 'horizon', 'page'];
+
+    public static function getVisibleFasilitasIds(?User $user = null): array
+    {
+        $user ??= auth()->user();
+        if (! $user || blank($user->fasilitas_kesehatan_id)) {
+            return [];
+        }
+        $ids = [(int) $user->fasilitas_kesehatan_id];
+        $faskes = FasilitasKesehatan::find($user->fasilitas_kesehatan_id);
+        if ($faskes?->tipe === 'puskesmas') {
+            $ids = array_merge($ids, $faskes->pustu()->pluck('id')->map(fn ($v) => (int) $v)->toArray());
+        }
+
+        return array_values(array_unique($ids));
+    }
 
     public function mount(): void
     {
-        // Default to latest periode with data (next-month predictions), not now() which has no predictions yet
+        $user = auth()->user();
+        $isFaskes = $user && filled($user->fasilitas_kesehatan_id);
+
+        if ($isFaskes && blank($this->fasilitas_id)) {
+            $this->fasilitas_id = (int) $user->fasilitas_kesehatan_id;
+        }
+        if ($isFaskes && blank($this->tahun)) {
+            $periode = app(RkoAccessCheckService::class)->getPeriodeTahun($user);
+            if (filled($periode)) {
+                $this->tahun = (int) $periode;
+            }
+        }
+
         if ($this->bulan === null || $this->tahun === null) {
-            $latest = PrediksiKebutuhan::query()
-                ->selectRaw('MAX(CONCAT(LPAD(periode_tahun,4,"0"), "-", LPAD(periode_bulan,2,"0"))) as max_periode')
-                ->value('max_periode');
-            if ($latest) {
-                [$y, $m] = explode('-', $latest);
+            $latestQuery = PrediksiKebutuhan::query();
+            if ($isFaskes) {
+                $visibleIds = self::getVisibleFasilitasIds($user);
+                if (! empty($visibleIds)) {
+                    $latestQuery->whereIn('fasilitas_id', $visibleIds);
+                }
+            }
+            $earliest = $latestQuery
+                ->selectRaw('MIN(CONCAT(LPAD(periode_tahun,4,"0"), "-", LPAD(periode_bulan,2,"0"))) as min_periode')
+                ->value('min_periode');
+            if ($earliest) {
+                [$y, $m] = explode('-', $earliest);
                 $this->tahun = $this->tahun ?? (int) $y;
                 $this->bulan = $this->bulan ?? (int) $m;
             } else {
@@ -60,12 +103,16 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
                 $this->tahun ??= now()->year;
             }
         }
+
         $this->form->fill([
             'fasilitas_id' => $this->fasilitas_id,
-            'obat_id' => $this->obat_id,
+            'kategori' => $this->kategori,
+            'cari' => $this->cari,
             'bulan' => $this->bulan,
             'tahun' => $this->tahun,
         ]);
+
+        $this->dispatchPrediksiFilters();
     }
 
     public function getHasPrediksiData(): bool
@@ -73,110 +120,265 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
         return PrediksiKebutuhan::exists();
     }
 
-    public function getNearestPeriode(): ?string
+    public function getCanBuatPo(): bool
     {
-        $row = PrediksiKebutuhan::orderBy('periode_tahun')->orderBy('periode_bulan')->first(['periode_bulan', 'periode_tahun']);
-        if (! $row) {
-            return null;
+        $user = auth()->user();
+        if (! $user) {
+            return false;
         }
 
-        return Carbon::create($row->periode_tahun, $row->periode_bulan)->translatedFormat('F Y');
+        if ($user->hasRole('super_admin') || $user->hasRole('admin_dinas') || $user->hasRole('admin_gudang')) {
+            return false;
+        }
+
+        return filled($user->fasilitas_kesehatan_id);
     }
 
     public function form(Schema $schema): Schema
     {
+        $user = auth()->user();
+        $isFaskes = $user && filled($user->fasilitas_kesehatan_id);
+        $visibleIds = $isFaskes ? self::getVisibleFasilitasIds($user) : [];
+
         return $schema->components([
-            Select::make('fasilitas_id')->label('Fasilitas')->options(FasilitasKesehatan::pluck('nama', 'id'))->placeholder('Semua Fasilitas')->nullable()->searchable()->live(),
-            Select::make('obat_id')->label('Obat')->options(Obat::pluck('nama_obat', 'id'))->placeholder('Semua Obat')->nullable()->searchable()->live(),
-            Select::make('bulan')->label('Bulan')->options([1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April', 5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus', 9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'])->live(),
-            Select::make('tahun')->label('Tahun')->options(fn () => array_combine(range(now()->year - 2, now()->year + 1), range(now()->year - 2, now()->year + 1)))->live(),
-        ])->columns(4);
+            Select::make('fasilitas_id')
+                ->label('Puskesmas')
+                ->options(function () use ($isFaskes, $visibleIds): array {
+                    if ($isFaskes && ! empty($visibleIds)) {
+                        return FasilitasKesehatan::whereIn('id', $visibleIds)->pluck('nama', 'id')->toArray();
+                    }
+
+                    return FasilitasKesehatan::pluck('nama', 'id')->toArray();
+                })
+                ->placeholder('Semua Puskesmas')
+                ->nullable()
+                ->searchable()
+                ->disabled($isFaskes && count($visibleIds) === 1)
+                ->live(),
+            Select::make('kategori')
+                ->label('Kategori')
+                ->options(fn (): array => Obat::whereNotNull('kategori')->distinct()->pluck('kategori', 'kategori')->toArray())
+                ->placeholder('Semua')
+                ->nullable()
+                ->searchable()
+                ->live(),
+            TextInput::make('cari')
+                ->label('Cari Obat')
+                ->placeholder('Cari nama obat...')
+                ->live(debounce: 400),
+            Select::make('bulan')
+                ->label('Bulan')
+                ->options([1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April', 5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus', 9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'])
+                ->live(),
+            Select::make('tahun')
+                ->label('Tahun')
+                ->options(fn () => array_combine(range(now()->year - 2, now()->year + 1), range(now()->year - 2, now()->year + 1)))
+                ->live(),
+        ])->columns(5);
     }
 
-    public function updated(string $property): void
+    public function setHorizon(int $horizon): void
     {
-        if (in_array($property, ['fasilitas_id', 'obat_id', 'bulan', 'tahun'], true)) {
-            $this->resetTable();
+        $this->horizon = $horizon;
+        $this->page = 1;
+        $this->dispatchPrediksiFilters();
+    }
+
+    public function setPage(int $page): void
+    {
+        $this->page = max(1, $page);
+    }
+
+    public function updated(): void
+    {
+        $this->page = 1;
+        $this->dispatchPrediksiFilters();
+    }
+
+    public function dispatchPrediksiFilters(): void
+    {
+        $user = auth()->user();
+        $isFaskes = $user && filled($user->fasilitas_kesehatan_id);
+
+        $this->dispatch('prediksiFiltersUpdated', [
+            'fasilitas_id' => $this->fasilitas_id,
+            'visible_fasilitas_ids' => $isFaskes && blank($this->fasilitas_id) ? self::getVisibleFasilitasIds($user) : null,
+            'bulan' => $this->bulan,
+            'tahun' => $this->tahun,
+            'horizon' => $this->horizon,
+        ]);
+    }
+
+    public function service(): PrediksiRekomendasiService
+    {
+        $user = auth()->user();
+        $isFaskes = $user && filled($user->fasilitas_kesehatan_id);
+
+        return new PrediksiRekomendasiService(
+            fasilitasId: $this->fasilitas_id,
+            bulan: (int) ($this->bulan ?? now()->month),
+            tahun: (int) ($this->tahun ?? now()->year),
+            horizon: $this->horizon,
+            kategori: $this->kategori,
+            cari: $this->cari,
+            visibleFasilitasIds: $isFaskes && blank($this->fasilitas_id) ? self::getVisibleFasilitasIds($user) : null,
+        );
+    }
+
+    public function getRekomendasiRows(): array
+    {
+        return $this->service()->rows();
+    }
+
+    public function getKpi(): array
+    {
+        $modelAkurasi = $this->getRataAkurasiModel();
+
+        return array_merge($this->service()->kpi($modelAkurasi), [
+            'akurasi_model' => $modelAkurasi,
+        ]);
+    }
+
+    public function getInsightAi(): array
+    {
+        $defisit = collect($this->getRekomendasiRows())->where('rekom', '>', 0)->values();
+        $top = $defisit->first();
+        $second = $defisit->get(1);
+        $akurasi = $this->getRataAkurasiModel();
+
+        return [
+            'defisit_count' => $defisit->count(),
+            'primary' => $top['nama_obat'] ?? null,
+            'primary_rekom' => $top['rekom'] ?? 0,
+            'primary_satuan' => $top['satuan'] ?? null,
+            'secondary' => $second['nama_obat'] ?? null,
+            'secondary_rekom' => $second['rekom'] ?? 0,
+            'fasilitas' => $this->getFasilitasNama(),
+            'horizon' => $this->horizon,
+            'confidence' => round($akurasi * 100, 1),
+        ];
+    }
+
+    public function getLonjakan(): array
+    {
+        return $this->service()->lonjakan(5);
+    }
+
+    public function getFasilitasNama(): string
+    {
+        if ($this->fasilitas_id) {
+            return FasilitasKesehatan::find($this->fasilitas_id)?->nama ?? 'Fasilitas Terpilih';
         }
+
+        return 'Semua Puskesmas';
     }
 
-    public function getStats(): array
+    public function getRataAkurasiModel(): float
     {
-        $modelQuery = ModelPrediksi::query()->when($this->fasilitas_id, fn (Builder $q) => $q->where('fasilitas_id', $this->fasilitas_id))->when($this->obat_id, fn (Builder $q) => $q->where('obat_id', $this->obat_id));
-        $prediksiQuery = PrediksiKebutuhan::query()->when($this->fasilitas_id, fn (Builder $q) => $q->where('fasilitas_id', $this->fasilitas_id));
+        $user = auth()->user();
+        $isFaskes = $user && filled($user->fasilitas_kesehatan_id);
+        $visibleIds = $isFaskes ? self::getVisibleFasilitasIds($user) : [];
 
-        return [
-            'model_aktif' => (clone $modelQuery)->where('status', 'aktif')->count(),
-            'obat_diprediksi' => (clone $prediksiQuery)->where('periode_bulan', $this->bulan)->where('periode_tahun', $this->tahun)->distinct('obat_id')->count('obat_id'),
-            'rata_akurasi' => (clone $modelQuery)->where('status', 'aktif')->whereNotNull('akurasi_r2')->avg('akurasi_r2'),
-            'rata_mae' => (clone $modelQuery)->where('status', 'aktif')->whereNotNull('mae')->avg('mae'),
-            'rata_mape' => (clone $modelQuery)->where('status', 'aktif')->whereNotNull('mape')->avg('mape'),
-            'faskes_terlatih' => (clone $modelQuery)->where('status', 'aktif')->distinct('fasilitas_id')->count('fasilitas_id'),
-        ];
-    }
-
-    public function getCriticalAlerts(): Collection
-    {
-        return PrediksiKebutuhan::query()
-            ->select(['prediksi_kebutuhan.*', DB::raw('COALESCE(sf.jumlah,0) as stok_saat_ini'), DB::raw('(prediksi_kebutuhan.jumlah_prediksi - COALESCE(sf.jumlah,0)) as kekurangan')])
-            ->leftJoin('stok_faskes as sf', fn ($j) => $j->on('prediksi_kebutuhan.fasilitas_id', '=', 'sf.fasilitas_id')->on('prediksi_kebutuhan.obat_id', '=', 'sf.obat_id'))
-            ->where('periode_bulan', $this->bulan)->where('periode_tahun', $this->tahun)
-            ->when($this->fasilitas_id, fn (Builder $q) => $q->where('prediksi_kebutuhan.fasilitas_id', $this->fasilitas_id))
-            ->when($this->obat_id, fn (Builder $q) => $q->where('prediksi_kebutuhan.obat_id', $this->obat_id))
-            ->whereRaw('COALESCE(sf.jumlah,0) < prediksi_kebutuhan.jumlah_prediksi')
-            ->orderByDesc('kekurangan')->limit(5)->with(['fasilitas', 'obat'])->get();
-    }
-
-    public function getChartData(): array
-    {
-        $query = PrediksiKebutuhan::query()
-            ->selectRaw('periode_tahun, periode_bulan, SUM(jumlah_prediksi) as total')
+        return (float) ModelPrediksi::query()
+            ->where('status', 'aktif')
+            ->whereNotNull('akurasi_r2')
             ->when($this->fasilitas_id, fn (Builder $q) => $q->where('fasilitas_id', $this->fasilitas_id))
-            ->when($this->obat_id, fn (Builder $q) => $q->where('obat_id', $this->obat_id))
-            ->groupBy('periode_tahun', 'periode_bulan')->orderBy('periode_tahun')->orderBy('periode_bulan')->limit(6)->get();
-
-        return [
-            'labels' => $query->map(fn ($r) => Carbon::create($r->periode_tahun, $r->periode_bulan)->translatedFormat('M Y'))->toArray(),
-            'values' => $query->pluck('total')->map(fn ($v) => (int) $v)->toArray(),
-        ];
-    }
-
-    public function table(Table $table): Table
-    {
-        return $table
-            ->query(
-                PrediksiKebutuhan::query()->with(['fasilitas', 'obat', 'model'])
-                    ->when($this->fasilitas_id, fn (Builder $q) => $q->where('fasilitas_id', $this->fasilitas_id))
-                    ->when($this->obat_id, fn (Builder $q) => $q->where('obat_id', $this->obat_id))
-                    ->when($this->bulan, fn (Builder $q) => $q->where('periode_bulan', $this->bulan))
-                    ->when($this->tahun, fn (Builder $q) => $q->where('periode_tahun', $this->tahun))
-            )
-            ->emptyStateHeading('Belum ada prediksi untuk filter ini')
-            ->emptyStateDescription(fn () => $this->getHasPrediksiData() ? 'Coba ubah filter Bulan/Tahun ke '.$this->getNearestPeriode().' atau jalankan php artisan ai:train-models --force.' : 'Belum ada data prediksi sama sekali. Jalankan php artisan ai:train-models --force.')
-            ->emptyStateIcon('heroicon-o-exclamation-triangle')
-            ->columns([
-                TextColumn::make('fasilitas.nama')->label('Fasilitas')->searchable()->sortable(),
-                TextColumn::make('obat.nama_obat')->label('Obat')->searchable()->sortable(),
-                TextColumn::make('periode_bulan')->label('Periode')->formatStateUsing(fn ($record) => Carbon::create($record->periode_tahun, $record->periode_bulan)->translatedFormat('F Y'))->sortable(query: fn (Builder $q, string $dir) => $q->orderBy('periode_tahun', $dir)->orderBy('periode_bulan', $dir)),
-                TextColumn::make('jumlah_prediksi')->label('Prediksi')->sortable()->weight('bold'),
-                TextColumn::make('confidence_lower')->label('CI')->formatStateUsing(fn ($record) => $record->confidence_lower.' – '.$record->confidence_upper)->toggleable(),
-                TextColumn::make('metode')->badge()->color(fn (string $state): string => match ($state) {
-                    'ann_php' => 'info', 'ai_gradient_boost' => 'success', 'moving_average' => 'warning', default => 'gray'
-                })->formatStateUsing(fn (string $state): string => match ($state) {
-                    'ann_php' => 'ANN', 'ai_gradient_boost' => 'AI', 'moving_average' => 'MA', default => $state
-                }),
-                TextColumn::make('model.akurasi_r2')->label('Akurasi')->formatStateUsing(fn ($state) => $state !== null ? number_format((float) $state * 100, 1).'%' : '-'),
-            ])
-            ->defaultSort('periode_tahun', 'desc')
-            ->paginated([10, 25, 50]);
+            ->when($isFaskes && blank($this->fasilitas_id) && ! empty($visibleIds), fn (Builder $q) => $q->whereIn('fasilitas_id', $visibleIds))
+            ->avg('akurasi_r2') ?? 0.0;
     }
 
     public function getModelRecords()
     {
+        $user = auth()->user();
+        $isFaskes = $user && filled($user->fasilitas_kesehatan_id);
+        $visibleIds = $isFaskes ? self::getVisibleFasilitasIds($user) : [];
+
         return ModelPrediksi::query()->with(['fasilitas', 'obat'])
+            ->when($isFaskes && blank($this->fasilitas_id) && ! empty($visibleIds), fn (Builder $q) => $q->whereIn('fasilitas_id', $visibleIds))
             ->when($this->fasilitas_id, fn (Builder $q) => $q->where('fasilitas_id', $this->fasilitas_id))
-            ->when($this->obat_id, fn (Builder $q) => $q->where('obat_id', $this->obat_id))
             ->orderByDesc('updated_at')->limit(10)->get();
+    }
+
+    public function exportUrl(): string
+    {
+        return route('admin.prediksi.cetak-xls', array_filter([
+            'fasilitas_id' => $this->fasilitas_id,
+            'kategori' => $this->kategori,
+            'cari' => $this->cari,
+            'bulan' => $this->bulan,
+            'tahun' => $this->tahun,
+            'horizon' => $this->horizon,
+        ], fn ($v) => $v !== null && $v !== ''));
+    }
+
+    public function buatPo(): void
+    {
+        $rows = collect($this->getRekomendasiRows())->where('rekom', '>', 0)->values();
+        $this->createPermintaan($rows);
+    }
+
+    public function buatPoObat(int $obatId): void
+    {
+        $row = collect($this->getRekomendasiRows())->firstWhere('obat_id', $obatId);
+        $this->createPermintaan(collect([$row])->filter()->values());
+        $this->closeDetail();
+    }
+
+    public function showDetail(int $obatId): void
+    {
+        $this->detailObatId = $obatId;
+        $this->dispatch('open-modal', id: 'prediksi-detail');
+    }
+
+    public function closeDetail(): void
+    {
+        $this->detailObatId = null;
+        $this->dispatch('close-modal', id: 'prediksi-detail');
+    }
+
+    public function getDetailData(): ?array
+    {
+        if (! $this->detailObatId) {
+            return null;
+        }
+
+        return $this->service()->detail($this->detailObatId);
+    }
+
+    public function mintaDistribusi(int $obatId): void
+    {
+        $row = collect($this->getRekomendasiRows())->firstWhere('obat_id', $obatId);
+        $permintaan = $this->createPermintaan(collect([$row])->filter()->values());
+        $this->closeDetail();
+
+        if ($permintaan) {
+            $this->redirect(PermintaanObatResource::getUrl('edit', ['record' => $permintaan->id]));
+        }
+    }
+
+    protected function createPermintaan(Collection $rows): ?PermintaanObat
+    {
+        if (! $this->getCanBuatPo()) {
+            Notification::make()->title('Hanya petugas faskes yang dapat membuat permintaan')->warning()->send();
+
+            return null;
+        }
+
+        $user = auth()->user();
+        $isFaskes = $user && filled($user->fasilitas_kesehatan_id);
+        $faskesId = $this->fasilitas_id ?? ($isFaskes ? (int) $user->fasilitas_kesehatan_id : null);
+
+        if (! $faskesId) {
+            Notification::make()->title('Pilih Puskesmas terlebih dahulu')->warning()->send();
+
+            return null;
+        }
+
+        return BuatPermintaanService::buat(
+            $faskesId,
+            $rows,
+            'Dibuat otomatis dari Prediksi AI ('.Carbon::create($this->tahun, $this->bulan)->translatedFormat('F Y').', '.$this->horizon.' bulan)',
+        );
     }
 
     public function trainModel(int $modelId): void
@@ -208,6 +410,11 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
 
     public static function getNavigationGroup(): string|UnitEnum|null
     {
+        $user = auth()->user();
+        if ($user && filled($user->fasilitas_kesehatan_id) && $user->hasPermissionTo('view_prediksi_kebutuhan')) {
+            return 'Laporan';
+        }
+
         return 'Ai Service';
     }
 
@@ -223,6 +430,8 @@ class PrediksiAiPage extends Page implements HasForms, HasTable
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->hasAnyRole(['super_admin', 'admin_dinas']) ?? false;
+        $user = auth()->user();
+
+        return $user?->hasPermissionTo('view_prediksi_kebutuhan') ?? false;
     }
 }

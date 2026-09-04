@@ -12,7 +12,7 @@ class AiTrainModelsCommandTest extends TestCase
         $command = new AiTrainModels;
 
         $this->assertSame('ai:train-models', $command->getName());
-        $this->assertSame('Train AI prediction models for all facility+drug combinations', $command->getDescription());
+        $this->assertSame('Train AI prediction models per faskes+obat (ANN 9-12-8-1)', $command->getDescription());
     }
 
     public function test_command_has_expected_options(): void

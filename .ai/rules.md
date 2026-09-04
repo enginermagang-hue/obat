@@ -10,7 +10,7 @@ Pharmacy stock-management app (Indonesian "obat" = medicine). Laravel 13.24 + Fi
 - Permissions: spatie/laravel-permission. Every resource has a Policy; permissions seeded in `database/seeders/RoleAndPermissionSeeder.php`. See `docs/permissions-reference.md`.
 - Auth is custom: login via `app/Http/Controllers/CustomAuthController.php` (Filament's default login is not used), Google via filament-socialite (only users with `google_login_enabled`).
 - PDF: spatie/laravel-pdf, driver from env (`LARAVEL_PDF_DRIVER=dompdf` default; browsershot/puppeteer also installed). Views in `resources/views/pdf/`, print routes in `routes/web.php` under `/admin/*/cetak-*`. Settings stored in DB (`pengaturan_laporan`) via `PdfSettingsService`.
-- AI: rubix/ml. `PredictionService` trains per faskes+obat, serialized RBX model stored in DB; train via `php artisan ai:train-models`, scheduled weekly. Uses monthly usage from `pemakaian_obat`.
+- AI: ANN PHP murni (MLP 9-12-8-1, tanpa dependensi ML eksternal). `PhpAnnPredictionService` trains per faskes+obat, bobot JSON disimpan di DB + `storage/app/ai-models/`; fallback moving average bila data < 6 bulan; train via `php artisan ai:train-models`, scheduled weekly. Uses monthly usage from `pemakaian_obat`. Lihat `docs/Prediksi AI.md`.
 
 ## Commands
 

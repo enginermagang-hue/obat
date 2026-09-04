@@ -23,7 +23,7 @@
       },
       "enabled": true
     },
-    "codebase-memory-mcp": {"command":["C:/Users/Admin/AppData/Local/Programs/codebase-memory-mcp/codebase-memory-mcp.exe"],"type":"local"},
+    "codebase-memory-mcp": {"command":["C:/Users/Admin/.local/bin/codebase-memory-mcp.exe"],"type":"local"},
     "playwright": {
       "type": "local",
       "command": [

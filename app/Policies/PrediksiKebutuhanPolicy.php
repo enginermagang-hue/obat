@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Filament\Pages\PrediksiAiPage;
 use App\Models\PrediksiKebutuhan;
 use App\Models\User;
 
@@ -14,7 +15,15 @@ class PrediksiKebutuhanPolicy
 
     public function view(User $user, PrediksiKebutuhan $prediksiKebutuhan): bool
     {
-        return $user->hasPermissionTo('view_prediksi_kebutuhan');
+        if (! $user->hasPermissionTo('view_prediksi_kebutuhan')) {
+            return false;
+        }
+        if (blank($user->fasilitas_kesehatan_id) || $user->hasRole('super_admin') || $user->hasRole('admin_dinas')) {
+            return true;
+        }
+        $visible = PrediksiAiPage::getVisibleFasilitasIds($user);
+
+        return in_array((int) $prediksiKebutuhan->fasilitas_id, $visible, true);
     }
 
     public function create(User $user): bool

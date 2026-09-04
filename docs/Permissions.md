@@ -140,6 +140,7 @@ view_neraca_tahunan, create_neraca_tahunan, update_neraca_tahunan
 view_opname_stok, create_opname_stok, update_opname_stok, delete_opname_stok
 view_retur_obat, create_retur_obat, update_retur_obat, delete_retur_obat
 view_activity_logs
+view_model_prediksi, view_prediksi_kebutuhan
 manage_pengaturan_pdf
 ```
 
@@ -193,8 +194,8 @@ view_prediksi_kebutuhan
 | Opname Stok        | CRUD |      ✅     |      CU      |     VU      |    ✅     |   -   |
 | Retur Obat         | CRUD |      ✅     |      -       |      -      |    ✅     |   -   |
 | Riwayat Stok       | view |      ✅     |      ✅      |     ✅      |    ✅     |  ✅   |
-| Prediksi Kebutuhan | view |      ✅     |      ✅      |     ✅      |     -     |  ✅   |
-| Model Prediksi     | view |      ✅     |      ✅      |     ✅      |     -     |   -   |
+| Prediksi Kebutuhan | view |      ✅     |      ✅      |     ✅      |    ✅     |  ✅   |
+| Model Prediksi     | view |      ✅     |      ✅      |     ✅      |    ✅     |   -   |
 | Activity Logs      | view |      ✅     |      ✅      |     ✅      |    ✅     |  ✅   |
 | Sumber Dana        | view |      ✅     |      -       |     ✅      |     -     |   -   |
 | Pengaturan PDF     |      |      ✅     |      ✅      |     ✅      |    ✅     |   -   |

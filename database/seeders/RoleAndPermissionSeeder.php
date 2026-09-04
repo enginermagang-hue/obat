@@ -48,7 +48,6 @@ class RoleAndPermissionSeeder extends Seeder
             'inspeksi_retur',
             'model_prediksi',
             'prediksi_kebutuhan',
-            'import_data_historis',
             'pengaturan_laporan',
             'avatar_presets',
             'user_preferences',
@@ -62,6 +61,14 @@ class RoleAndPermissionSeeder extends Seeder
                 Permission::firstOrCreate(['name' => "{$action}_{$resource}"]);
             }
         }
+
+        // Bersihkan permission yatim dari fitur yang sudah dihapus (import tabulasi)
+        Permission::whereIn('name', [
+            'view_import_data_historis',
+            'create_import_data_historis',
+            'update_import_data_historis',
+            'delete_import_data_historis',
+        ])->delete();
 
         // ──────────── Roles ────────────
         $superAdmin = Role::firstOrCreate(['name' => 'super_admin']);
@@ -129,6 +136,7 @@ class RoleAndPermissionSeeder extends Seeder
             'view_opname_stok', 'create_opname_stok', 'update_opname_stok', 'delete_opname_stok',
             'view_retur_obat', 'create_retur_obat', 'update_retur_obat', 'delete_retur_obat',
             'view_activity_logs',
+            'view_prediksi_kebutuhan', 'view_model_prediksi',
         ]);
 
         // ──────────── pustu ────────────

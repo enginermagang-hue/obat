@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\LaporanRkos\Concerns;
 
+use App\Models\ModelPrediksi;
 use App\Models\Obat;
 use App\Models\PrediksiKebutuhan;
 use App\Models\StokFaskes;
@@ -544,19 +545,43 @@ trait ManagesRkoDetails
             ->orderBy('nama_obat')
             ->get();
 
-        $prediksiMap = PrediksiKebutuhan::query()
+        // Rata-rata 3 bulan prediksi per obat (lebih stabil untuk ×18) — fallback MA jika <3 data
+        $allPrediksi = PrediksiKebutuhan::query()
             ->where('fasilitas_id', $fasilitasId)
             ->where('periode_tahun', $periodeRkoTahun)
+            ->orderBy('periode_bulan')
             ->get()
-            ->groupBy('obat_id')
-            ->map(fn ($items) => $items->sortByDesc('periode_bulan')->first());
+            ->groupBy('obat_id');
+
+        // Info status model untuk warning (data_belum_cukup/kadaluarsa/gagal)
+        $modelStatusMap = ModelPrediksi::query()
+            ->where('fasilitas_id', $fasilitasId)
+            ->whereIn('obat_id', $obatList->pluck('id'))
+            ->pluck('status', 'obat_id');
+
+        $prediksiAggMap = $allPrediksi->map(function ($items) {
+            $sorted = $items->sortByDesc('periode_bulan')->take(3);
+            $avg = (int) round($sorted->avg('jumlah_prediksi'));
+            $latest = $items->sortByDesc('periode_bulan')->first();
+            $metode = $latest?->metode;
+            $clValues = $sorted->pluck('confidence_lower')->filter(fn ($v) => $v !== null);
+            $cuValues = $sorted->pluck('confidence_upper')->filter(fn ($v) => $v !== null);
+
+            return [
+                'rata_rata' => $avg,
+                'jumlah_bulan' => $sorted->count(),
+                'prediksi_id' => $latest?->id,
+                'metode' => $metode,
+                'confidence_lower' => $clValues->isNotEmpty() ? (int) round($clValues->avg()) : $latest?->confidence_lower,
+                'confidence_upper' => $cuValues->isNotEmpty() ? (int) round($cuValues->avg()) : $latest?->confidence_upper,
+            ];
+        });
 
         $this->details = [];
 
         foreach ($obatList as $i => $obat) {
-            $prediksi = $prediksiMap->get($obat->id);
-
-            $rataRata = $prediksi?->jumlah_prediksi ?? 0;
+            $agg = $prediksiAggMap->get($obat->id);
+            $rataRata = $agg['rata_rata'] ?? 0;
             $pemakaianTahunSebelumnya = $rataRata * 12;
 
             $stokAkhir = StokFaskes::where('fasilitas_id', $fasilitasId)
@@ -580,9 +605,32 @@ trait ManagesRkoDetails
             $totalHarga = $usulan * $hargaPerkiraan;
 
             $keterangan = null;
-            if ($prediksi !== null) {
-                $metodeLabel = $prediksi->metode === 'ai_gradient_boost' ? 'Gradient Boost' : 'Moving Average';
-                $keterangan = "Prediksi: {$prediksi->jumlah_prediksi} ({$metodeLabel}, range: {$prediksi->confidence_lower}–{$prediksi->confidence_upper})";
+            $prediksiId = $agg['prediksi_id'] ?? null;
+            $status = $modelStatusMap->get($obat->id);
+            if ($agg !== null) {
+                $metodeLabel = match ($agg['metode']) {
+                    'ann_php' => 'ANN',
+                    'ai_gradient_boost' => 'Gradient Boost',
+                    'moving_average' => 'Moving Average',
+                    default => $agg['metode'] ?? 'Prediksi',
+                };
+                $periodeInfo = $agg['jumlah_bulan'] > 1 ? "rata-rata {$agg['jumlah_bulan']} bln" : '1 bln';
+                $keterangan = "Prediksi: {$rataRata} ({$metodeLabel} {$periodeInfo}, range: {$agg['confidence_lower']}–{$agg['confidence_upper']})";
+                if ($status === 'data_belum_cukup') {
+                    $keterangan .= ' — Data <6 bln (MA fallback)';
+                } elseif ($status === 'kadaluarsa') {
+                    $keterangan .= ' — Model kadaluarsa';
+                } elseif ($status === 'gagal') {
+                    $keterangan .= ' — Model gagal';
+                }
+            } elseif ($status === 'data_belum_cukup' || $status === 'gagal' || $status === 'kadaluarsa') {
+                $keterangan = match ($status) {
+                    'data_belum_cukup' => 'Data belum cukup untuk prediksi',
+                    'gagal' => 'Model prediksi gagal',
+                    'kadaluarsa' => 'Prediksi kadaluarsa — perlu retrain',
+                    default => null,
+                };
+                $prediksiId = null;
             }
 
             $this->details[] = [
@@ -604,7 +652,7 @@ trait ManagesRkoDetails
                 'keterangan' => $keterangan,
                 'ven_kategori_hidden' => $venKategori,
                 'abc_kategori' => null,
-                'prediksi_id' => $prediksi?->id,
+                'prediksi_id' => $prediksiId,
             ];
         }
 

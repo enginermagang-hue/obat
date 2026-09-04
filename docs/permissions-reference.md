@@ -492,13 +492,11 @@
 ║ delete_prediksi_ke... ║ prediksi...    ║ delete    ║
 ╚═══════════════════════╩════════════════╩═══════════╝
 
-⚠️  INCONSISTENCY: pustu has `view_prediksi_kebutuhan` but puskesmas doesn't (line 149 vs 134).
-
-**Role Assignment**:
+**Role Assignment** (sesuai `RoleAndPermissionSeeder.php`):
   ✅ super_admin — Full CRUD all (8)
   ✅ admin_gudang — View only both (2)
   ✅ admin_dinas  — View only both (2)
-  ❌ puskesmas   — None
+  ✅ puskesmas   — View only both (2)
   ✅ pustu       — View prediksi_kebutuhan only (1)
 
 ---
@@ -647,8 +645,6 @@
 ║    → users, roles, permissions, fasilitas, obat, suppliers, import, etc.       ║
 ║    → Need business decision: assign to specific roles or leave super-only     ║
 ╠══════════════════════════════════════════════════════════════════════════════════╣
-║ 9. ⚠️  `pustu` HAS `view_prediksi_kebutuhan` BUT NOT `puskesmas`?              ║
-║    → Line 149 (pustu) vs line 134 (puskesmas) — verify intentional             ║
 ╠══════════════════════════════════════════════════════════════════════════════════╣
 ║ 10. ⚠️  ADMIN_DINAS HAS `delete_sumber_dana`                                    ║
 ║     → Should dinas be able to delete master data (sumber_dana)?                ║
@@ -688,8 +684,8 @@ Legend: V=view, C=create, U=update, D=delete, ⚠️=legacy, ❌=none
 ║ retur_obat             ║ C+R+U+D       ║ C+R+U+D     ║ V+U           ║ C+R+U+D   ║ C+R+U+D   ║
 ║ inspeksi_retur         ║ C+R+U+D       ║ C+V+U       ║ V             ║ ❌        ║ ❌        ║
 ║ opname_stok            ║ C+R+U+D       ║ C+V+U       ║ V+U           ║ C+R+U+D   ║ C+R+U+D   ║
-║ model_prediksi         ║ C+R+U+D       ║ V           ║ V             ║ ❌        ║ ❌        ║
-║ prediksi_kebutuhan     ║ C+R+U+D       ║ V           ║ V             ║ ❌        ║ V         ║
+║ model_prediksi         ║ C+R+U+D       ║ V           ║ V             ║ V         ║ ❌        ║
+║ prediksi_kebutuhan     ║ C+R+U+D       ║ V           ║ V             ║ V         ║ V         ║
 ║ pengaturan_laporan     ║ C+R+U+D       ║ ⚠️ special  ║ ⚠️ special    ║ ❌        ║ ❌        ║
 ║ avatar_presets         ║ C+R+U+D       ║ ❌          ║ ❌            ║ ❌        ║ ❌        ║
 ║ user_preferences       ║ C+R+U+D       ║ ❌          ║ C+R+U+D       ║ ❌        ║ ❌        ║

@@ -40,7 +40,7 @@ User faskes buka Create RKO
 
 ### 3.3 Generate dari Prediksi AI
 
-- Sumber: `PrediksiKebutuhan` — hasil prediksi AI (Gradient Boost) atau Moving Average
+- Sumber: `PrediksiKebutuhan` — hasil prediksi AI (ANN) atau Moving Average
 - `rata_rata_pemakaian_bulanan` = `jumlah_prediksi` (dari prediksi bulan terbaru)
 - `pemakaian_tahun_sebelumnya` = `jumlah_prediksi × 12` (estimasi)
 - Item yang di-generate: **semua obat aktif** (obat tanpa prediksi diisi 0, user edit manual)

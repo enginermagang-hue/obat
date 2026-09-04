@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-Sistem ini mengelola distribusi obat dari Gudang Dinas Kesehatan ke Puskesmas, dan dari Puskesmas ke Pustu. Terdapat 4 peran pengguna: **Super Admin**, **Admin Gudang**, **Admin Dinas**, dan **User** (Puskesmas/Pustu). Stok masuk ke gudang dicatat melalui **Penerimaan Stok** yang mencakup pembelian (dari supplier), hibah, stok awal, dan penyesuaian manual. Sistem juga dilengkapi **AI Prediction** menggunakan Rubix/ML untuk memprediksi kebutuhan obat mendatang, serta fitur **Retur Obat** dengan proses karantina dan inspeksi.
+Sistem ini mengelola distribusi obat dari Gudang Dinas Kesehatan ke Puskesmas, dan dari Puskesmas ke Pustu. Terdapat 4 peran pengguna: **Super Admin**, **Admin Gudang**, **Admin Dinas**, dan **User** (Puskesmas/Pustu). Stok masuk ke gudang dicatat melalui **Penerimaan Stok** yang mencakup pembelian (dari supplier), hibah, stok awal, dan penyesuaian manual. Sistem juga dilengkapi **AI Prediction** menggunakan ANN (Jaringan Saraf Tiruan, PHP murni) untuk memprediksi kebutuhan obat mendatang, serta fitur **Retur Obat** dengan proses karantina dan inspeksi.
 
 ---
 
@@ -848,27 +848,31 @@ Pencatatan hasil inspeksi obat retur yang masuk karantina.
 
 ### 28. `model_prediksi`
 
-Menyimpan model ML (Rubix/ML) yang sudah di-train untuk setiap kombinasi faskes + obat.
+Menyimpan model ANN (Jaringan Saraf Tiruan, PHP murni) yang sudah di-train untuk setiap kombinasi faskes + obat.
 
 | Kolom                  | Tipe              | Nullable | Keterangan                                          |
 | ---------------------- | ----------------- | -------- | --------------------------------------------------- |
 | id                     | BIGINT (PK)       |          | Primary key                                         |
 | fasilitas_id           | BIGINT (FK)       |          | FK ke `fasilitas_kesehatan.id`                      |
 | obat_id                | BIGINT (FK)       |          | FK ke `obat.id`                                     |
-| model_data             | LONGTEXT          |          | Model yang sudah di-train (serialized JSON)         |
+| model_data             | LONGTEXT          |          | Bobot ANN terserialisasi (JSON)                     |
+| model_path             | VARCHAR           | ✓        | Path file model (`ai-models/{fid}_{oid}.json`)      |
 | akurasi_r2             | DECIMAL(5,4)      | ✓        | R² score model (0-1, semakin tinggi semakin baik)   |
+| mae                    | DECIMAL(10,2)     | ✓        | Mean Absolute Error                                 |
+| mape                   | DECIMAL(5,2)      | ✓        | Mean Absolute Percentage Error (%)                  |
 | tanggal_training       | DATE              |          | Tanggal terakhir model di-train                     |
-| data_training_count    | INT               |          | Jumlah data yang dipakai training                   |
-| fitur_digunakan        | JSON              | ✓        | Daftar fitur yang dipakai model                     |
+| data_training_count    | INT               |          | Jumlah bulan berbeda dengan pemakaian > 0           |
+| fitur_digunakan        | JSON              | ✓        | Daftar fitur yang dipakai model (9 fitur)           |
 | status                 | ENUM              |          | `aktif`, `kadaluarsa`, `gagal`, `data_belum_cukup`  |
+| error_message          | TEXT              | ✓        | Pesan error bila training `gagal`                   |
 | created_at             | TIMESTAMP         | ✓        |                                                     |
 | updated_at             | TIMESTAMP         | ✓        |                                                     |
 
 **Catatan:**
 - Unique constraint: `fasilitas_id`, `obat_id` (kombinasi unik)
-- `status = 'data_belum_cukup'` jika data historis < 6 bulan → fallback ke moving average
-- Model di-retrain otomatis via cron mingguan
-- `model_data` berisi serialized Rubix/ML model (GradientBoost)
+- `status = 'data_belum_cukup'` jika bulan berisi data < 6 → fallback ke moving average
+- Model di-retrain otomatis via cron mingguan (`ai:train-models`)
+- `model_data` + file `model_path` berisi bobot ANN MLP 9-12-8-1 (lihat `docs/Prediksi AI.md` §4.2)
 
 ---
 
@@ -887,7 +891,7 @@ Menyimpan hasil prediksi AI untuk kebutuhan obat mendatang, termasuk confidence 
 | jumlah_prediksi        | INT               |          | Jumlah kebutuhan yang diprediksi                    |
 | confidence_lower       | INT               | ✓        | Batas bawah confidence interval 95%                 |
 | confidence_upper       | INT               | ✓        | Batas atas confidence interval 95%                  |
-| metode                 | ENUM              |          | `ai_gradient_boost`, `ai_random_forest`, `moving_average`, `manual` |
+| metode                 | ENUM              |          | `ann_php`, `moving_average`, `manual` (+ legacy `ai_gradient_boost`, `ai_random_forest` untuk data lama) |
 | dibuat_oleh            | BIGINT (FK)       | ✓        | FK ke `users.id`. NULL jika otomatis dari AI        |
 | catatan                | TEXT              | ✓        | Catatan tambahan                                    |
 | created_at             | TIMESTAMP         | ✓        |                                                     |
@@ -1469,9 +1473,9 @@ Obat keluar dari sistem selamanya — tidak perlu karantina atau inspeksi.
       - Tipe faskes (Puskesmas/Pustu)
       - Stok saat ini
       - Trend (naik/turun)
-   c. Train GradientBoost model (Rubix/ML)
-   d. Hitung R² score
-   e. Simpan model ke model_prediksi
+   c. Train ANN MLP 9-12-8-1 (PHP murni, SGD + early stopping)
+   d. Hitung R², MAE, MAPE (split train/test 80/20)
+   e. Simpan bobot (JSON) ke model_prediksi + file ai-models/
    f. Generate prediksi untuk 3 bulan ke depan → simpan ke prediksi_kebutuhan
 
 3. Jika data < 6 bulan:

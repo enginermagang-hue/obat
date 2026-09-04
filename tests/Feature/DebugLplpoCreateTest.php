@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
 
-class DebugLplpoCreateTest extends BaseTestCase
+class DebugLplpoCreateTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_create_page_loads()
     {
         $user = User::where('email', 'puskesmas@mail.com')->first();
